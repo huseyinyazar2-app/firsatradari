@@ -316,6 +316,10 @@ class SchedulerService:
             if ingestion_run is not None:
                 ingestion_run.estimated_cost = amount
                 self._session.commit()
+            if outcome.status not in {"succeeded", "partial"}:
+                raise SchedulerError(
+                    f"Ingestion ended with status: {outcome.status}"
+                )
             return {
                 "ingestion_run_id": str(outcome.run_id),
                 "status": outcome.status,

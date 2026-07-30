@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -7,8 +8,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from firsat_radari.config import Settings
+from firsat_radari.connectors.base import CollectionResult, CollectionStatus
 from firsat_radari.db.base import Base
-from firsat_radari.db.models import ScheduledJobRun
+from firsat_radari.db.models import DataSource, ScheduledJobRun
 from firsat_radari.profiles.service import (
     ProfileInput,
     ResearchProfileService,
@@ -160,6 +162,92 @@ async def test_scoring_schedule_uses_an_explicit_research_profile() -> None:
         assert run is not None
         assert run.result["opportunity_count"] == 0
         assert run.result["ranked_count"] == 0
+    finally:
+        context.close()
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_ingestion_fails_the_scheduled_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class RateLimitedConnector:
+        source_key = "github"
+        job_type = "discovery"
+        version = "test"
+
+        async def discover(self, query, checkpoint=None):
+            return CollectionResult(
+                status=CollectionStatus.RATE_LIMITED,
+                is_complete=False,
+                errors=["rate_limited"],
+            )
+
+        async def fetch(self, external_id):
+            return CollectionResult(
+                status=CollectionStatus.FAILED_PERMANENT,
+                errors=["unsupported"],
+            )
+
+    monkeypatch.setattr(
+        "firsat_radari.scheduler.service.create_connector",
+        lambda connector_key, settings: RateLimitedConnector(),
+    )
+    context = _context()
+    session = next(context)
+    try:
+        session.add(
+            DataSource(
+                key="github",
+                source_type="code_host",
+                evidence_family_key="developer_activity",
+                independence_group_key="github",
+                independence_status="independent",
+                owner="GitHub",
+                base_url="https://api.github.com",
+                policy_status="approved",
+                policy_version="test",
+                commercial_use_status="allowed",
+                storage_permission="allowed",
+                derived_data_permission="allowed",
+                llm_processing_permission="prohibited",
+                retention_days=30,
+                enabled=True,
+            )
+        )
+        session.commit()
+        now = datetime.now(UTC)
+        service = SchedulerService(
+            session,
+            Settings(
+                environment="test",
+                database_url="sqlite://",
+                raw_storage_path=tmp_path,
+            ),
+        )
+        service.create(
+            ScheduleInput(
+                key="rate-limited-ingestion",
+                job_type="ingestion",
+                interval_minutes=60,
+                payload={
+                    "source_key": "github",
+                    "connector_key": "github",
+                    "query": {"q": "workflow automation"},
+                    "max_pages": 1,
+                },
+                next_run_at=now,
+                created_by="test",
+            )
+        )
+
+        result = await service.run_due(as_of=now)
+
+        assert result.failed_count == 1
+        run = session.get(ScheduledJobRun, result.run_ids[0])
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_message == "Ingestion ended with status: rate_limited"
     finally:
         context.close()
 
