@@ -14,8 +14,10 @@ from firsat_radari.db.models import (
     ClaimEvidenceLink,
     CommercialOutcome,
     CommercialValidationExperiment,
+    DataSource,
     EvidenceClaim,
     EvidenceClaimReview,
+    NormalizedDocument,
     Opportunity,
     OpportunityComponentClaimLink,
     OpportunityExport,
@@ -144,10 +146,26 @@ class OpportunityResearchService:
                 )
                 if item is None:
                     continue
+                document = self._session.get(
+                    NormalizedDocument,
+                    item.document_id,
+                )
+                source = self._session.get(DataSource, link.source_id)
+                attributes = document.attributes if document is not None else {}
                 evidence.append(
                     {
                         "evidence_id": str(item.id),
                         "source_id": str(link.source_id),
+                        "source_name": source.owner if source is not None else None,
+                        "source_url": (
+                            document.canonical_url
+                            if document is not None
+                            else None
+                        ),
+                        "source_license": attributes.get("content_license"),
+                        "attribution_required": bool(
+                            attributes.get("attribution_required", False)
+                        ),
                         "direction": link.direction,
                         "excerpt": item.excerpt,
                         "confidence": str(item.confidence),

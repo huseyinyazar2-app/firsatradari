@@ -149,6 +149,10 @@ type ResearchRun = {
         direction: string;
         excerpt: string;
         confidence: string;
+        source_name: string | null;
+        source_url: string | null;
+        source_license: string | null;
+        attribution_required: boolean;
       }>;
       commercial_evidence: Array<{
         outcome_id: string;
@@ -2596,16 +2600,32 @@ function Radar({
                           </div>
                           <strong>{component.statement}</strong>
                           {component.evidence.map((evidence) => (
-                            <blockquote
-                              className={
-                                evidence.direction === "refutes"
-                                  ? "refuting"
-                                  : ""
-                              }
-                              key={evidence.evidence_id}
-                            >
-                              {evidence.excerpt}
-                            </blockquote>
+                            <div key={evidence.evidence_id}>
+                              <blockquote
+                                className={
+                                  evidence.direction === "refutes"
+                                    ? "refuting"
+                                    : ""
+                                }
+                              >
+                                {evidence.excerpt}
+                              </blockquote>
+                              {evidence.source_url && (
+                                <small className="evidence-attribution">
+                                  Kaynak:{" "}
+                                  <a
+                                    href={evidence.source_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {evidence.source_name ?? "Kaynak belge"}
+                                  </a>
+                                  {evidence.source_license
+                                    ? ` · ${evidence.source_license}`
+                                    : ""}
+                                </small>
+                              )}
+                            </div>
                           ))}
                           {component.commercial_evidence.map((outcome) => (
                             <p
