@@ -486,20 +486,24 @@ class IngestionService:
             previous_schema = previous.top_level_schema
             current_keys = set(schema)
             previous_keys = set(previous_schema)
+            type_changes = sorted(
+                key
+                for key in current_keys & previous_keys
+                if not _json_types_compatible(
+                    schema[key],
+                    previous_schema[key],
+                )
+            )
             self._record_quality_event(
                 source=source,
                 run=run,
                 item=item,
                 event_type="source_schema_changed",
-                severity="warning",
+                severity="warning" if type_changes else "info",
                 details={
                     "added_fields": sorted(current_keys - previous_keys),
                     "removed_fields": sorted(previous_keys - current_keys),
-                    "type_changes": sorted(
-                        key
-                        for key in current_keys & previous_keys
-                        if schema[key] != previous_schema[key]
-                    ),
+                    "type_changes": type_changes,
                     "previous_fingerprint": previous.fingerprint,
                     "current_fingerprint": fingerprint,
                 },
@@ -827,6 +831,10 @@ def _json_type(value: Any) -> str:
     if isinstance(value, dict):
         return "object"
     return type(value).__name__
+
+
+def _json_types_compatible(current: str, previous: str) -> bool:
+    return current == previous or "null" in {current, previous}
 
 
 def _query_fingerprint(

@@ -14,6 +14,9 @@ Veri ve istatistik temelli fırsat keşif sistemi.
 
 Gereksinim: Python 3.13.
 
+Yerel ayarlar için kökteki `.env.example` dosyası `.env` adıyla kopyalanır.
+Backend API ve zamanlayıcı bu tek proje ayar dosyasını kullanır.
+
 ```powershell
 python -m venv backend\.venv
 backend\.venv\Scripts\python.exe -m pip install -e "backend[dev]"
@@ -59,6 +62,9 @@ Ham JSON nesneleri varsayılan olarak `data/raw` altında içerik hash'iyle değ
 biçimde saklanır. `FIRSAT_RAW_STORAGE_PATH` ile konum değiştirilebilir. Ingestion
 yalnızca etkin, politika sürümü belirlenmiş, ham saklama ve süreli retention izni
 verilmiş kaynaklarda çalışır.
+
+Göreli ham veri yolları `backend` dizinine göre çözülür; API ve zamanlayıcı farklı
+çalışma dizinlerinden başlatılsa bile aynı nesne deposunu kullanır.
 
 Ingestion HTTP tetikleyicisi varsayılan olarak kapalıdır. Yalnızca politika onayı
 tamamlandıktan sonra `FIRSAT_INGESTION_API_ENABLED=true` ile açılmalıdır.
@@ -340,8 +346,8 @@ mutasyonlar korunur. İstemci anahtarı
 `FIRSAT_CORS_ALLOWED_ORIGINS` ile sınırlandırılır.
 
 Operasyon taraması etkin kaynaklarda başarısız/yarım çalışma, eski veri, açık
-kalite olayı, eksik collection ve günlük/aylık USD bütçe aşımını kalıcı alarm
-olarak kaydeder:
+kalite olayı, eksik collection, süresi dolmuş ham veri ve günlük/aylık USD bütçe
+aşımını kalıcı alarm olarak kaydeder:
 
 ```powershell
 cd backend

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 from sqlalchemy import create_engine
@@ -5,7 +7,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from firsat_radari.api.dependencies import get_db_session
-from firsat_radari.config import get_settings
+from firsat_radari.config import (
+    BACKEND_ROOT,
+    PROJECT_ROOT,
+    Settings,
+    get_settings,
+)
 from firsat_radari.db.base import Base
 from firsat_radari.main import create_app
 
@@ -18,6 +25,22 @@ async def test_health() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_raw_storage_path_is_independent_from_working_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    settings = Settings(
+        environment="test",
+        database_url="sqlite://",
+        raw_storage_path="data/raw",
+    )
+
+    assert settings.raw_storage_path == (BACKEND_ROOT / "data" / "raw").resolve()
+    assert Settings.model_config["env_file"] == PROJECT_ROOT / ".env"
 
 
 @pytest.mark.asyncio

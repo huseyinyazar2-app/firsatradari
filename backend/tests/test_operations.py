@@ -10,7 +10,13 @@ from sqlalchemy.pool import StaticPool
 from firsat_radari.api.dependencies import get_db_session
 from firsat_radari.config import Settings, get_settings
 from firsat_radari.db.base import Base
-from firsat_radari.db.models import CostEntry, DataSource, OperationalAlert
+from firsat_radari.db.models import (
+    CostEntry,
+    DataSource,
+    IngestionRun,
+    OperationalAlert,
+    RawSnapshot,
+)
 from firsat_radari.main import create_app
 from firsat_radari.operations.service import (
     CostEntryInput,
@@ -137,5 +143,94 @@ def test_operations_api_exposes_cost_and_health_summary() -> None:
         assert weekly.status_code == 200
         assert weekly.json()["period"] == "weekly"
         assert weekly.json()["cost_by_currency"] == {"USD": "1.250000"}
+    finally:
+        context.close()
+
+
+def test_expired_raw_snapshot_opens_critical_retention_alert() -> None:
+    context = _context()
+    session, _ = next(context)
+    try:
+        source = _source(session)
+        now = datetime.now(UTC)
+        session.add(
+            RawSnapshot(
+                source_id=source.id,
+                run_id=None,
+                collection_id=None,
+                external_type="example",
+                external_id="expired-1",
+                observed_at=now - timedelta(days=40),
+                source_created_at=None,
+                source_updated_at=None,
+                content_hash="a" * 64,
+                object_storage_key="example/expired.json",
+                media_type="application/json",
+                schema_hint=None,
+                policy_version="1",
+                retention_until=now - timedelta(days=10),
+                is_deleted_at_source=False,
+            )
+        )
+        session.commit()
+
+        result = OperationsService(session).evaluate(
+            as_of=now,
+            freshness_hours=24,
+            daily_budget_usd=Decimal("0"),
+            monthly_budget_usd=Decimal("0"),
+        )
+
+        retention_alert = session.query(OperationalAlert).filter_by(
+            category="retention_expiry"
+        ).one()
+        assert result.open_alert_count == 2
+        assert retention_alert.severity == "critical"
+        assert retention_alert.details == {"count": 1}
+    finally:
+        context.close()
+
+
+def test_recent_partial_run_with_data_counts_as_fresh_but_warns() -> None:
+    context = _context()
+    session, _ = next(context)
+    try:
+        source = _source(session)
+        now = datetime.now(UTC)
+        session.add(
+            IngestionRun(
+                source_id=source.id,
+                collection_id=None,
+                connector_version="test",
+                job_type="discovery",
+                query_definition={},
+                query_fingerprint=None,
+                status="partial",
+                checkpoint_before=None,
+                checkpoint_after=None,
+                started_at=now - timedelta(minutes=2),
+                finished_at=now - timedelta(minutes=1),
+                request_count=1,
+                response_count=1,
+                raw_item_count=10,
+                normalized_item_count=0,
+                duplicate_item_count=0,
+                error_count=0,
+                estimated_cost=Decimal("0"),
+            )
+        )
+        session.commit()
+
+        result = OperationsService(session).evaluate(
+            as_of=now,
+            freshness_hours=24,
+            daily_budget_usd=Decimal("0"),
+            monthly_budget_usd=Decimal("0"),
+        )
+
+        alerts = session.query(OperationalAlert).all()
+        assert result.open_alert_count == 1
+        assert alerts[0].category == "source_failure"
+        assert alerts[0].severity == "warning"
     finally:
         context.close()

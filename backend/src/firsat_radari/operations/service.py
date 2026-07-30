@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from firsat_radari.db.models import (
@@ -16,6 +16,7 @@ from firsat_radari.db.models import (
     IngestionRun,
     OperationalAlert,
     Opportunity,
+    RawSnapshot,
     RequestRecord,
 )
 
@@ -271,11 +272,17 @@ class OperationsService:
             .order_by(IngestionRun.started_at.desc())
             .limit(1)
         )
-        latest_success = self._session.scalar(
+        latest_usable = self._session.scalar(
             select(IngestionRun)
             .where(
                 IngestionRun.source_id == source.id,
-                IngestionRun.status == "succeeded",
+                or_(
+                    IngestionRun.status == "succeeded",
+                    and_(
+                        IngestionRun.status == "partial",
+                        IngestionRun.raw_item_count > 0,
+                    ),
+                ),
             )
             .order_by(IngestionRun.finished_at.desc())
             .limit(1)
@@ -291,19 +298,19 @@ class OperationsService:
                     details={"run_id": str(latest_run.id)},
                 )
             )
-        if latest_success is None or latest_success.finished_at is None:
+        if latest_usable is None or latest_usable.finished_at is None:
             alerts.append(
                 _AlertValue(
                     key=f"{prefix}:never_succeeded",
                     source_id=source.id,
                     category="freshness",
                     severity="critical",
-                    message=f"{source.key} has no successful ingestion",
+                    message=f"{source.key} has no usable ingestion",
                     details={"freshness_hours": freshness_hours},
                 )
             )
         else:
-            finished_at = _as_utc(latest_success.finished_at)
+            finished_at = _as_utc(latest_usable.finished_at)
             age_hours = max(
                 Decimal("0"),
                 Decimal(str((as_of - finished_at).total_seconds() / 3600)),
@@ -329,6 +336,9 @@ class OperationsService:
             .where(
                 DataQualityEvent.source_id == source.id,
                 DataQualityEvent.resolved_at.is_(None),
+                DataQualityEvent.severity.in_(
+                    ("warning", "error", "critical")
+                ),
             )
         )
         if open_quality:
@@ -401,6 +411,26 @@ class OperationsService:
                     severity="warning",
                     message=f"{source.key} has incomplete collections",
                     details={"count": int(incomplete)},
+                )
+            )
+        expired_snapshots = self._session.scalar(
+            select(func.count())
+            .select_from(RawSnapshot)
+            .where(
+                RawSnapshot.source_id == source.id,
+                RawSnapshot.retention_until.is_not(None),
+                RawSnapshot.retention_until < as_of,
+            )
+        )
+        if expired_snapshots:
+            alerts.append(
+                _AlertValue(
+                    key=f"{prefix}:retention_expired",
+                    source_id=source.id,
+                    category="retention_expiry",
+                    severity="critical",
+                    message=f"{source.key} has expired retained snapshots",
+                    details={"count": int(expired_snapshots)},
                 )
             )
         return alerts

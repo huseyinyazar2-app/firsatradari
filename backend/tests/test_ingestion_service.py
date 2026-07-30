@@ -406,7 +406,7 @@ async def test_partial_collection_resumes_from_persisted_checkpoint(
 
 
 @pytest.mark.asyncio
-async def test_new_top_level_schema_creates_quality_warning(
+async def test_new_optional_top_level_field_creates_quality_information(
     session: Session,
     tmp_path: Path,
 ) -> None:
@@ -422,6 +422,12 @@ async def test_new_top_level_schema_creates_quality_warning(
         external_type="record",
         external_id="2",
         payload={"id": "2", "value": "second", "new_field": True},
+        observed_at=datetime.now(UTC),
+    )
+    incompatible_item = RawItem(
+        external_type="record",
+        external_id="3",
+        payload={"id": "3", "value": {"nested": True}, "new_field": True},
         observed_at=datetime.now(UTC),
     )
 
@@ -450,12 +456,32 @@ async def test_new_top_level_schema_creates_quality_warning(
         {"q": "schema"},
         resume=False,
     )
-
-    event = session.scalar(
-        select(DataQualityEvent).where(DataQualityEvent.event_type == "source_schema_changed")
+    await service.discover(
+        FakeConnector(
+            [
+                CollectionResult(
+                    status=CollectionStatus.SUCCEEDED,
+                    items=[incompatible_item],
+                    is_complete=True,
+                )
+            ]
+        ),
+        {"q": "schema"},
+        resume=False,
     )
-    assert event is not None
-    assert event.details["added_fields"] == ["new_field"]
+
+    events = list(
+        session.scalars(
+            select(DataQualityEvent).where(
+                DataQualityEvent.event_type == "source_schema_changed"
+            )
+        )
+    )
+    assert {event.severity for event in events} == {"info", "warning"}
+    information = next(event for event in events if event.severity == "info")
+    warning = next(event for event in events if event.severity == "warning")
+    assert information.details["added_fields"] == ["new_field"]
+    assert warning.details["type_changes"] == ["value"]
 
 
 @pytest.mark.asyncio

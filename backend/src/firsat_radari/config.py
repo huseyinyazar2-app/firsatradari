@@ -3,13 +3,16 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = BACKEND_ROOT.parent
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=PROJECT_ROOT / ".env",
         env_prefix="FIRSAT_",
         extra="ignore",
     )
@@ -17,7 +20,7 @@ class Settings(BaseSettings):
     environment: Literal["development", "test", "production"] = "development"
     database_url: str = "postgresql+psycopg://firsat:firsat@localhost:5432/firsat_radari"
     log_level: str = "INFO"
-    raw_storage_path: Path = Path("data/raw")
+    raw_storage_path: Path = BACKEND_ROOT / "data" / "raw"
     ingestion_api_enabled: bool = False
     ingestion_api_max_pages: int = Field(default=10, ge=1, le=100)
     normalization_api_enabled: bool = False
@@ -57,6 +60,13 @@ class Settings(BaseSettings):
     github_token: SecretStr | None = None
     stack_exchange_key: SecretStr | None = None
     validation_hash_secret: SecretStr | None = None
+
+    @field_validator("raw_storage_path")
+    @classmethod
+    def resolve_raw_storage_path(cls, value: Path) -> Path:
+        if value.is_absolute():
+            return value.resolve()
+        return (BACKEND_ROOT / value).resolve()
 
 
 @lru_cache
