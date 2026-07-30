@@ -1,6 +1,9 @@
+import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import create_engine
@@ -162,6 +165,87 @@ async def test_scoring_schedule_uses_an_explicit_research_profile() -> None:
         assert run is not None
         assert run.result["opportunity_count"] == 0
         assert run.result["ranked_count"] == 0
+    finally:
+        context.close()
+
+
+@pytest.mark.asyncio
+async def test_problem_analysis_refreshes_extraction_clusters_and_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    extraction_run_id = uuid.uuid4()
+    clustering_run_id = uuid.uuid4()
+    metric_run_id = uuid.uuid4()
+    extractor = Mock()
+    extractor.return_value.extract_pending.return_value = SimpleNamespace(
+        run_id=extraction_run_id,
+        status="succeeded",
+        input_count=3,
+        evidence_count=2,
+        error_count=0,
+    )
+    clustering = Mock()
+    clustering.return_value.cluster.return_value = SimpleNamespace(
+        run_id=clustering_run_id,
+        cluster_count=1,
+        eligible_count=2,
+    )
+    metrics = Mock()
+    metrics.return_value.calculate.return_value = SimpleNamespace(
+        run_id=metric_run_id,
+        cluster_count=1,
+        metric_count=9,
+        error_count=0,
+    )
+
+    monkeypatch.setattr(
+        "firsat_radari.scheduler.service.GitHubProblemEvidenceExtractor",
+        extractor,
+    )
+    monkeypatch.setattr(
+        "firsat_radari.scheduler.service.ProblemClusteringEngine",
+        clustering,
+    )
+    monkeypatch.setattr(
+        "firsat_radari.scheduler.service.ProblemClusterMetricEngine",
+        metrics,
+    )
+    context = _context()
+    session = next(context)
+    try:
+        now = datetime.now(UTC)
+        service = SchedulerService(
+            session,
+            Settings(environment="test", database_url="sqlite://"),
+        )
+        service.create(
+            ScheduleInput(
+                key="problem-analysis",
+                job_type="problem_analysis",
+                interval_minutes=60,
+                payload={
+                    "source_keys": ["github"],
+                    "extract_limit": 25,
+                },
+                next_run_at=now,
+                created_by="test",
+            )
+        )
+
+        result = await service.run_due(as_of=now)
+
+        run = session.get(ScheduledJobRun, result.run_ids[0])
+        assert run is not None
+        assert result.succeeded_count == 1, run.error_message
+        assert run.result["extractions"]["github"]["input_count"] == 3
+        assert run.result["clustering"]["cluster_count"] == 1
+        assert run.result["cluster_metrics"]["metric_count"] == 9
+        extractor.return_value.extract_pending.assert_called_once_with(
+            limit=25
+        )
+        metrics.return_value.calculate.assert_called_once_with(
+            clustering_run_id
+        )
     finally:
         context.close()
 

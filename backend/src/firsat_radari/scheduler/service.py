@@ -41,6 +41,7 @@ JOB_TYPES = frozenset(
     {
         "ingestion",
         "radar_scan",
+        "problem_analysis",
         "opportunity_scoring",
         "operations_evaluation",
     }
@@ -260,11 +261,57 @@ class SchedulerService:
                 "ranking_run_id": str(ranking.ranking_run_id),
                 "ranked_count": ranking.ranked_count,
             }
+        if job.job_type == "problem_analysis":
+            return self._problem_analysis(job.payload, now)
         if job.job_type == "ingestion":
             return await self._ingest(job.payload)
         if job.job_type == "radar_scan":
             return await self._radar_scan(job.payload, now)
         raise SchedulerError("Unsupported scheduled job type")
+
+    def _problem_analysis(self, payload: dict, now: datetime) -> dict:
+        extractions = {}
+        for source_key in payload["source_keys"]:
+            if source_key == "github":
+                extractor = GitHubProblemEvidenceExtractor(self._session)
+            elif source_key == "stack_exchange":
+                extractor = StackExchangeProblemEvidenceExtractor(
+                    self._session
+                )
+            else:
+                raise SchedulerError("Unsupported problem analysis source")
+            outcome = extractor.extract_pending(
+                limit=payload["extract_limit"]
+            )
+            extractions[source_key] = {
+                "run_id": str(outcome.run_id),
+                "status": outcome.status,
+                "input_count": outcome.input_count,
+                "evidence_count": outcome.evidence_count,
+                "error_count": outcome.error_count,
+            }
+        clustering = ProblemClusteringEngine(self._session).cluster(
+            as_of=now,
+            source_created_from=None,
+        )
+        metrics = ProblemClusterMetricEngine(self._session).calculate(
+            clustering.run_id
+        )
+        return {
+            "extractions": extractions,
+            "clustering": {
+                "run_id": str(clustering.run_id),
+                "cluster_count": clustering.cluster_count,
+                "eligible_count": clustering.eligible_count,
+            },
+            "cluster_metrics": {
+                "run_id": str(metrics.run_id),
+                "cluster_count": metrics.cluster_count,
+                "metric_count": metrics.metric_count,
+                "error_count": metrics.error_count,
+            },
+            "next_gate": "cluster_review_and_claim_approval",
+        }
 
     async def _ingest(self, payload: dict) -> dict:
         request_cost = Decimal(payload["request_cost_usd"])
@@ -453,6 +500,41 @@ def _validated_payload(
         except (ValueError, TypeError, AttributeError) as exc:
             raise SchedulerError("Invalid research_profile_id") from exc
         return {"research_profile_id": research_profile_id}
+    if job_type == "problem_analysis":
+        if set(payload) - {"source_keys", "extract_limit"}:
+            raise SchedulerError(
+                "Problem analysis payload contains unsupported fields"
+            )
+        source_keys = payload.get("source_keys")
+        if (
+            not isinstance(source_keys, list)
+            or not source_keys
+            or any(
+                not isinstance(source_key, str)
+                or source_key not in {"github", "stack_exchange"}
+                for source_key in source_keys
+            )
+        ):
+            raise SchedulerError(
+                "Problem analysis requires supported source_keys"
+            )
+        if len(source_keys) != len(set(source_keys)):
+            raise SchedulerError(
+                "Problem analysis source_keys must be unique"
+            )
+        extract_limit = payload.get("extract_limit", 500)
+        if (
+            not isinstance(extract_limit, int)
+            or not 1 <= extract_limit <= extraction_max_items
+        ):
+            raise SchedulerError(
+                "extract_limit must be between 1 and "
+                f"{extraction_max_items}"
+            )
+        return {
+            "source_keys": source_keys,
+            "extract_limit": extract_limit,
+        }
     source_key = payload.get("source_key")
     connector_key = payload.get("connector_key") or source_key
     query = payload.get("query")

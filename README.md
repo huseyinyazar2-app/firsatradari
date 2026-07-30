@@ -416,7 +416,9 @@ cd backend
 npm Public Registry metadata araması ile GitHub public repository araması.
 Repository verisi oluştuktan sonraki çalıştırmada, 10–100 açık iş kaydı bulunan
 en fazla on repository için sınırlı issue taramaları da eklenir. Stack Exchange
-programı oluşturulmaz.
+programı oluşturulmaz. Issue taramalarından 30 dakika sonra çalışan ayrı analiz
+programı, yalnızca izinli GitHub kayıtlarında bekleyen problem çıkarımını tamamlar;
+kümeleri ve küme metriklerini haftalık olarak yeniden üretir.
 
 `FIRSAT_AUDIT_LOG_ENABLED=true` olduğunda mutasyon isteklerinin aktörü, yolu,
 sonuç kodu ve süresi kaydedilir. İstek gövdesi, API anahtarı, sorgu parametreleri

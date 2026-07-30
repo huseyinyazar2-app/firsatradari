@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -57,13 +57,28 @@ _PILOT_SCHEDULES = (
         created_by="owner:huseyinyazar2-app",
     ),
 )
+_PILOT_ANALYSIS_SCHEDULE = ScheduleInput(
+    key="pilot-problem-analysis",
+    job_type="problem_analysis",
+    interval_minutes=10_080,
+    payload={
+        "source_keys": ["github"],
+        "extract_limit": 500,
+    },
+    next_run_at=datetime.now(UTC) + timedelta(minutes=30),
+    created_by="owner:huseyinyazar2-app",
+)
 
 
 def main() -> None:
     with SessionLocal() as session:
         service = SchedulerService(session, get_settings())
         existing_keys = set(session.scalars(select(ScheduledJob.key)))
-        schedules = (*_PILOT_SCHEDULES, *_issue_schedules(session))
+        schedules = (
+            *_PILOT_SCHEDULES,
+            *_issue_schedules(session),
+            _PILOT_ANALYSIS_SCHEDULE,
+        )
         for schedule in schedules:
             if schedule.key in existing_keys:
                 print(f"unchanged: {schedule.key}")
