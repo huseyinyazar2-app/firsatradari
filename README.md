@@ -44,6 +44,40 @@ Sağlık kontrolü:
 GET http://127.0.0.1:8000/health
 ```
 
+## Sunucuda çalıştırma
+
+Sunucu kurulumu PostgreSQL, backend API, sürekli scheduler worker, frontend ve
+HTTPS reverse proxy servislerini ayrı container'larda çalıştırır. Veritabanı ve
+backend portu internete doğrudan açılmaz.
+
+```bash
+cp .env.production.example .env.production
+# Parolaları, API anahtarını ve FIRSAT_DOMAIN değerini düzenleyin.
+docker compose --env-file .env.production -f compose.production.yaml up -d --build
+```
+
+Alan adının DNS kaydı sunucuyu gösterdiğinde Caddy TLS sertifikasını otomatik
+yönetir. Arayüz aynı origin altındaki `/api` yolunu kullandığı için tarayıcıda
+ayrı backend adresi girilmesi gerekmez. Scheduler her
+`FIRSAT_SCHEDULER_POLL_SECONDS` saniyede vadesi gelen kalıcı işleri çalıştırır.
+Kaynak politikaları onaylanıp kaynaklar etkinleştirildikten sonra pilot işleri bir
+kez oluşturulur:
+
+```bash
+docker compose --env-file .env.production -f compose.production.yaml \
+  exec backend python scripts/bootstrap_pilot_schedules.py
+```
+
+Yedek ve geri yükleme doğrulaması:
+
+```bash
+sh deploy/backup.sh
+sh deploy/verify-backup.sh backups/20260730T120000Z
+```
+
+Doğrulama üretim verisini geri yüklemez; aynı PostgreSQL sunucusunda geçici ve
+ayrı bir veritabanı oluşturur, dump'ı orada sınar ve işlem sonunda siler.
+
 Salt okunur bağlayıcı smoke testi:
 
 ```powershell
@@ -431,3 +465,13 @@ sonuç kodu ve süresi kaydedilir. İstek gövdesi, API anahtarı, sorgu paramet
 ve kişisel ham veri denetim kaydına yazılmaz. Aktör
 `X-Firsat-Actor` başlığında iletilir; kayıtlar `GET /audit-events` üzerinden
 incelenebilir.
+
+Problem sınıflandırıcısının güncel kapsam ve dengeli inceleme örneği:
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe scripts\report_problem_classifier.py
+```
+
+Rapor, etiketlenmiş gerçek olmadığı sürece precision/recall uydurmaz; bu değerleri
+`unavailable_until_review` olarak açıkça gösterir.

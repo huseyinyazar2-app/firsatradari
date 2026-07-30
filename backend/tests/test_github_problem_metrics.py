@@ -562,6 +562,26 @@ async def test_feature_request_is_not_assumed_to_be_a_problem_report(
 
 
 @pytest.mark.asyncio
+async def test_unusable_issue_title_is_a_problem_report(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    add_github_source_and_repository(session)
+    items = work_items(count=1)
+    items[0].payload["title"] = "Setup from scratch is unusable"
+    items[0].payload["body"] = "Fresh installation feedback."
+    items[0].payload["labels"] = []
+    await ingest_and_normalize(session, FileObjectStore(tmp_path), items)
+
+    GitHubProblemEvidenceExtractor(session).extract_pending()
+    evidence = list(session.scalars(select(ProblemEvidence)))
+
+    assert "problem_report" in {
+        item.evidence_type for item in evidence
+    }
+
+
+@pytest.mark.asyncio
 async def test_problem_clustering_requires_cross_project_repetition(
     session: Session,
     tmp_path: Path,

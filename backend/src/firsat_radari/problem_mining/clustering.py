@@ -20,7 +20,7 @@ from firsat_radari.db.models import (
 )
 
 ALGORITHM_KEY = "lexical_problem_candidates"
-ALGORITHM_VERSION = "1.1.1"
+ALGORITHM_VERSION = "1.1.2"
 SIMILARITY_THRESHOLD = Decimal("0.600000")
 MAX_CLUSTERING_INPUTS = 1_000
 PERMITTED_DERIVED_DATA_STATUSES = frozenset({"allowed", "approved"})
@@ -77,7 +77,7 @@ TOKEN_ALIASES = {
     "installed": "install",
 }
 ACTIVE_EXTRACTORS = {
-    "github_problem_rules": "1.1.1",
+    "github_problem_rules": "1.1.2",
     "stack_exchange_problem_rules": "1.0.0",
 }
 

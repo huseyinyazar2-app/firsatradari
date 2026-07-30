@@ -68,6 +68,14 @@ _PILOT_ANALYSIS_SCHEDULE = ScheduleInput(
     next_run_at=datetime.now(UTC) + timedelta(minutes=30),
     created_by="owner:huseyinyazar2-app",
 )
+_PILOT_OPERATIONS_SCHEDULE = ScheduleInput(
+    key="pilot-operations-evaluation",
+    job_type="operations_evaluation",
+    interval_minutes=60,
+    payload={},
+    next_run_at=datetime.now(UTC),
+    created_by="owner:huseyinyazar2-app",
+)
 
 
 def main() -> None:
@@ -78,6 +86,7 @@ def main() -> None:
             *_PILOT_SCHEDULES,
             *_issue_schedules(session),
             _PILOT_ANALYSIS_SCHEDULE,
+            _PILOT_OPERATIONS_SCHEDULE,
         )
         for schedule in schedules:
             if schedule.key in existing_keys:

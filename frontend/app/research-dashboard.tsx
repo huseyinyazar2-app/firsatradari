@@ -298,7 +298,8 @@ const EMPTY: DashboardData = {
   verticals: [],
   profiles: [],
 };
-const DEFAULT_API_URL = "http://127.0.0.1:8000";
+const DEFAULT_API_URL =
+  import.meta.env.VITE_FIRSAT_API_URL ?? "http://127.0.0.1:8000";
 const EMPTY_DETAIL: DetailData = {
   reviews: [],
   researchRuns: [],

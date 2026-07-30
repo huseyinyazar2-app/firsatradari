@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     research_settings_api_enabled: bool = False
     scheduler_api_enabled: bool = False
     scheduler_lease_minutes: int = Field(default=120, ge=15, le=1_440)
+    scheduler_poll_seconds: int = Field(default=60, ge=10, le=3_600)
     audit_log_enabled: bool = False
     operations_api_enabled: bool = False
     source_freshness_hours: int = Field(default=48, ge=1, le=8_760)

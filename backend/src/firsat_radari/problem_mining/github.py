@@ -19,7 +19,7 @@ from firsat_radari.db.models import (
 )
 
 EXTRACTOR_KEY = "github_problem_rules"
-EXTRACTOR_VERSION = "1.1.1"
+EXTRACTOR_VERSION = "1.1.2"
 PERMITTED_DERIVED_DATA_STATUSES = frozenset({"allowed", "approved"})
 PROBLEM_LABELS = frozenset(
     {
@@ -36,7 +36,7 @@ PROBLEM_REPORT_PATTERN = re.compile(
     r"\b("
     r"bug|broken|cannot|can't|crash(?:ed|es|ing)?|"
     r"error|fail(?:ed|ing|s|ure)?|incorrect|"
-    r"not working|regression|unable|unexpected"
+    r"not working|regression|unable|unexpected|unusable"
     r")\b",
     re.IGNORECASE,
 )
