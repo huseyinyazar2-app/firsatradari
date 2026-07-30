@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from firsat_radari.db.models import (
@@ -15,11 +15,12 @@ from firsat_radari.db.models import (
     ProblemClusteringRun,
     ProblemClusterMembership,
     ProblemEvidence,
+    ProblemExtractionRecord,
     RawSnapshot,
 )
 
 ALGORITHM_KEY = "lexical_problem_candidates"
-ALGORITHM_VERSION = "1.0.0"
+ALGORITHM_VERSION = "1.1.1"
 SIMILARITY_THRESHOLD = Decimal("0.600000")
 MAX_CLUSTERING_INPUTS = 1_000
 PERMITTED_DERIVED_DATA_STATUSES = frozenset({"allowed", "approved"})
@@ -74,6 +75,10 @@ TOKEN_ALIASES = {
     "installing": "install",
     "installation": "install",
     "installed": "install",
+}
+ACTIVE_EXTRACTORS = {
+    "github_problem_rules": "1.1.1",
+    "stack_exchange_problem_rules": "1.0.0",
 }
 
 
@@ -153,12 +158,21 @@ class ProblemClusteringEngine:
                 RawSnapshot,
                 RawSnapshot.id == NormalizedDocument.snapshot_id,
             )
+            .join(
+                ProblemExtractionRecord,
+                ProblemExtractionRecord.id
+                == ProblemEvidence.extraction_record_id,
+            )
             .where(
                 ProblemEvidence.evidence_type == "problem_report",
-                ProblemEvidence.rule_key.in_(
-                    (
-                        "github_issue_report",
-                        "stack_exchange_question_report",
+                or_(
+                    *(
+                        and_(
+                            ProblemExtractionRecord.extractor_key == key,
+                            ProblemExtractionRecord.extractor_version
+                            == version,
+                        )
+                        for key, version in ACTIVE_EXTRACTORS.items()
                     )
                 ),
                 ProblemEvidence.created_at <= query_cutoff,

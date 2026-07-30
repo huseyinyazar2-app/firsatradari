@@ -415,7 +415,7 @@ cd backend
 İlk pilot programı haftalık, tek sayfalık ve maliyetsiz iki keşif işi oluşturur:
 npm Public Registry metadata araması ile GitHub public repository araması.
 Repository verisi oluştuktan sonraki çalıştırmada, 10–100 açık iş kaydı bulunan
-en fazla beş repository için sınırlı issue taramaları da eklenir. Stack Exchange
+en fazla on repository için sınırlı issue taramaları da eklenir. Stack Exchange
 programı oluşturulmaz.
 
 `FIRSAT_AUDIT_LOG_ENABLED=true` olduğunda mutasyon isteklerinin aktörü, yolu,

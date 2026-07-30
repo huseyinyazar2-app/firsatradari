@@ -23,6 +23,10 @@ from firsat_radari.db.models import (
     SignalDefinition,
     SignalValue,
 )
+from firsat_radari.problem_mining.github import (
+    EXTRACTOR_KEY,
+    EXTRACTOR_VERSION,
+)
 
 DEFINITION_SET_VERSION = "github_problem_v2"
 NORMALIZER_KEY = "github_work_item"
@@ -327,8 +331,9 @@ class GitHubProblemMetricEngine:
                     select(ProblemExtractionRecord.document_id).where(
                         ProblemExtractionRecord.document_id.in_(document_ids),
                         ProblemExtractionRecord.extractor_key
-                        == "github_problem_rules",
-                        ProblemExtractionRecord.extractor_version == "1.0.0",
+                        == EXTRACTOR_KEY,
+                        ProblemExtractionRecord.extractor_version
+                        == EXTRACTOR_VERSION,
                         ProblemExtractionRecord.status == "succeeded",
                     )
                 )
@@ -337,7 +342,20 @@ class GitHubProblemMetricEngine:
                 select(
                     ProblemEvidence.document_id,
                     ProblemEvidence.evidence_type,
-                ).where(ProblemEvidence.document_id.in_(document_ids))
+                )
+                .join(
+                    ProblemExtractionRecord,
+                    ProblemExtractionRecord.id
+                    == ProblemEvidence.extraction_record_id,
+                )
+                .where(
+                    ProblemEvidence.document_id.in_(document_ids),
+                    ProblemExtractionRecord.extractor_key
+                    == EXTRACTOR_KEY,
+                    ProblemExtractionRecord.extractor_version
+                    == EXTRACTOR_VERSION,
+                    ProblemExtractionRecord.status == "succeeded",
+                )
             ):
                 evidence_types_by_document[document_id].add(evidence_type)
         extraction_coverage = (

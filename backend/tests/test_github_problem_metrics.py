@@ -537,6 +537,31 @@ async def test_problem_evidence_is_grounded_versioned_and_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_feature_request_is_not_assumed_to_be_a_problem_report(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    add_github_source_and_repository(session)
+    items = work_items(count=1)
+    items[0].payload["title"] = "Add CSV export support"
+    items[0].payload["body"] = (
+        "Feature request: scheduled exports are currently not working "
+        "for our workflow."
+    )
+    items[0].payload["labels"] = [{"name": "enhancement"}]
+    await ingest_and_normalize(session, FileObjectStore(tmp_path), items)
+
+    outcome = GitHubProblemEvidenceExtractor(session).extract_pending()
+    evidence = list(session.scalars(select(ProblemEvidence)))
+
+    assert outcome.status == "succeeded"
+    assert {item.evidence_type for item in evidence} == {
+        "missing_capability"
+    }
+    assert all(item.rule_key != "github_issue_report" for item in evidence)
+
+
+@pytest.mark.asyncio
 async def test_problem_clustering_requires_cross_project_repetition(
     session: Session,
     tmp_path: Path,

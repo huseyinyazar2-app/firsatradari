@@ -19,8 +19,27 @@ from firsat_radari.db.models import (
 )
 
 EXTRACTOR_KEY = "github_problem_rules"
-EXTRACTOR_VERSION = "1.0.0"
+EXTRACTOR_VERSION = "1.1.1"
 PERMITTED_DERIVED_DATA_STATUSES = frozenset({"allowed", "approved"})
+PROBLEM_LABELS = frozenset(
+    {
+        "bug",
+        "crash",
+        "defect",
+        "incident",
+        "problem",
+        "regression",
+        "security",
+    }
+)
+PROBLEM_REPORT_PATTERN = re.compile(
+    r"\b("
+    r"bug|broken|cannot|can't|crash(?:ed|es|ing)?|"
+    r"error|fail(?:ed|ing|s|ure)?|incorrect|"
+    r"not working|regression|unable|unexpected"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 class ProblemExtractionError(ValueError):
@@ -274,22 +293,27 @@ def _extract_candidates(document: NormalizedDocument) -> list[EvidenceCandidate]
     if bool(document.attributes.get("is_bot_likely", False)):
         return []
 
-    candidates = [
-        EvidenceCandidate(
-            evidence_type="problem_report",
-            rule_key="github_issue_report",
-            source_field="title",
-            char_start=0,
-            char_end=len(document.title),
-            excerpt=document.title,
-            confidence=Decimal("0.6000"),
-            attributes={
-                "comments_count": document.attributes.get("comments_count", 0),
-                "labels": document.attributes.get("labels", []),
-                "state": document.attributes.get("state"),
-            },
+    candidates: list[EvidenceCandidate] = []
+    if _is_problem_report(document):
+        candidates.append(
+            EvidenceCandidate(
+                evidence_type="problem_report",
+                rule_key="github_issue_report",
+                source_field="title",
+                char_start=0,
+                char_end=len(document.title),
+                excerpt=document.title,
+                confidence=Decimal("0.7000"),
+                attributes={
+                    "comments_count": document.attributes.get(
+                        "comments_count",
+                        0,
+                    ),
+                    "labels": document.attributes.get("labels", []),
+                    "state": document.attributes.get("state"),
+                },
+            )
         )
-    ]
     for source_field, text in (("title", document.title), ("body", document.body or "")):
         for rule in RULES:
             for match in rule.pattern.finditer(text):
@@ -306,6 +330,21 @@ def _extract_candidates(document: NormalizedDocument) -> list[EvidenceCandidate]
                     )
                 )
     return candidates
+
+
+def _is_problem_report(document: NormalizedDocument) -> bool:
+    labels = {
+        str(label).strip().casefold()
+        for label in document.attributes.get("labels", [])
+        if str(label).strip()
+    }
+    if any(
+        known_label == label or known_label in label.split()
+        for label in labels
+        for known_label in PROBLEM_LABELS
+    ):
+        return True
+    return PROBLEM_REPORT_PATTERN.search(document.title) is not None
 
 
 def _context_excerpt(text: str, start: int, end: int) -> str:

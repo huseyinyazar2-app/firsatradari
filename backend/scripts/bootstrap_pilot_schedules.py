@@ -85,7 +85,7 @@ def _issue_schedules(session) -> tuple[ScheduleInput, ...]:
             RepositoryObservation.open_items_count.desc(),
             RepositoryObservation.stars_count.desc(),
         )
-        .limit(5)
+        .limit(10)
     )
     now = datetime.now(UTC)
     return tuple(
