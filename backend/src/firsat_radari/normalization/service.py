@@ -79,6 +79,7 @@ class NormalizationService:
                 .where(
                     RawSnapshot.source_id == source.id,
                     RawSnapshot.external_type.in_(normalizer.supported_external_types),
+                    RawSnapshot.purged_at.is_(None),
                     ~already_normalized,
                 )
                 .order_by(RawSnapshot.observed_at, RawSnapshot.id)

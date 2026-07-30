@@ -100,6 +100,20 @@ verilmiş kaynaklarda çalışır.
 Göreli ham veri yolları `backend` dizinine göre çözülür; API ve zamanlayıcı farklı
 çalışma dizinlerinden başlatılsa bile aynı nesne deposunu kullanır.
 
+Süresi dolmuş ham nesneler önce yalnızca raporlanır; açık `--apply` olmadan
+silinmez. Üretimde uygulamadan önce yedek alınmalı ve ilk komutun çıktısı
+incelenmelidir:
+
+```bash
+cd backend
+python scripts/purge_expired_raw.py
+python scripts/purge_expired_raw.py --apply
+```
+
+Temizleme yalnızca ham nesneyi kaldırır; denetim ve gözlem metadatasını korur.
+Aynı içerik daha sonra kaynakta yeniden gözlenirse ham nesne geri yazılır ve
+saklama süresi yeni gözlem tarihinden itibaren yenilenir.
+
 Ingestion HTTP tetikleyicisi varsayılan olarak kapalıdır. Yalnızca politika onayı
 tamamlandıktan sonra `FIRSAT_INGESTION_API_ENABLED=true` ile açılmalıdır.
 `FIRSAT_INGESTION_API_MAX_PAGES` çağrı başına sert sayfa sınırıdır.
@@ -452,8 +466,10 @@ cd backend
 .\.venv\Scripts\python.exe scripts\run_scheduler.py
 ```
 
-İlk pilot programı haftalık, tek sayfalık ve maliyetsiz iki keşif işi oluşturur:
-npm Public Registry metadata araması ile GitHub public repository araması.
+Pilot programı haftalık, tek sayfalık ve maliyetsiz keşif işleri oluşturur.
+İlk veride sık görülen konu etiketlerine göre npm Public Registry ve GitHub
+repository aramaları `workflow automation`, `mcp agent tooling` ve
+`self hosted automation` kohortlarını kapsar.
 Repository verisi oluştuktan sonraki çalıştırmada, 10–100 açık iş kaydı bulunan
 en fazla on repository için sınırlı issue taramaları da eklenir. Stack Exchange
 programı oluşturulmaz. Issue taramalarından 30 dakika sonra çalışan ayrı analiz

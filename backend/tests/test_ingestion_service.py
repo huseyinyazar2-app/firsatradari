@@ -27,6 +27,7 @@ from firsat_radari.db.models import (
 )
 from firsat_radari.ingestion.errors import SourcePolicyError
 from firsat_radari.ingestion.service import IngestionService
+from firsat_radari.operations.retention import RetentionService
 from firsat_radari.storage.filesystem import FileObjectStore
 
 
@@ -201,6 +202,74 @@ async def test_repeated_payload_is_deduplicated(
     }
     assert [observation.is_duplicate for observation in observations] == [False, True]
     assert len(list(tmp_path.rglob("*.json"))) == 1
+
+
+@pytest.mark.asyncio
+async def test_reobserved_purged_payload_is_restored_and_retention_is_renewed(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    add_source(session)
+    store = FileObjectStore(tmp_path)
+    service = IngestionService(session, store)
+    first_observation = datetime.now(UTC) - timedelta(days=40)
+    first_result = CollectionResult(
+        status=CollectionStatus.SUCCEEDED,
+        items=[
+            RawItem(
+                external_type="record",
+                external_id="1",
+                payload={"id": "1", "value": "same"},
+                observed_at=first_observation,
+            )
+        ],
+        is_complete=True,
+    )
+
+    await service.discover(FakeConnector([first_result]), {"q": "test"})
+    snapshot = session.scalar(select(RawSnapshot))
+    assert snapshot is not None
+    snapshot.retention_until = datetime.now(UTC) - timedelta(days=1)
+    session.commit()
+
+    purge = RetentionService(session, store).purge_expired(
+        as_of=datetime.now(UTC),
+        apply=True,
+    )
+
+    assert purge.purged_count == 1
+    assert not store.exists(snapshot.object_storage_key)
+    session.refresh(snapshot)
+    assert snapshot.purged_at is not None
+
+    observed_again_at = datetime.now(UTC)
+    repeated_result = CollectionResult(
+        status=CollectionStatus.SUCCEEDED,
+        items=[
+            RawItem(
+                external_type="record",
+                external_id="1",
+                payload={"id": "1", "value": "same"},
+                observed_at=observed_again_at,
+            )
+        ],
+        is_complete=True,
+    )
+    outcome = await service.discover(
+        FakeConnector([repeated_result]),
+        {"q": "test"},
+        resume=False,
+    )
+
+    session.refresh(snapshot)
+    assert outcome.duplicate_item_count == 1
+    assert session.scalar(select(func.count()).select_from(RawSnapshot)) == 1
+    assert store.exists(snapshot.object_storage_key)
+    assert snapshot.purged_at is None
+    assert snapshot.retention_until is not None
+    assert snapshot.retention_until.replace(tzinfo=UTC) >= (
+        observed_again_at + timedelta(days=30)
+    )
 
 
 @pytest.mark.asyncio

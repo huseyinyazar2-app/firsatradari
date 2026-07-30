@@ -41,6 +41,13 @@ class FileObjectStore(ObjectStore):
     def exists(self, key: str) -> bool:
         return self._resolve_key(key).is_file()
 
+    def delete(self, key: str) -> bool:
+        target = self._resolve_key(key)
+        if not target.is_file():
+            return False
+        target.unlink()
+        return True
+
     def _resolve_key(self, key: str) -> Path:
         relative = PurePosixPath(key)
         if relative.is_absolute() or not relative.parts or ".." in relative.parts:

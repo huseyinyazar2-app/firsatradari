@@ -420,6 +420,7 @@ class OperationsService:
                 RawSnapshot.source_id == source.id,
                 RawSnapshot.retention_until.is_not(None),
                 RawSnapshot.retention_until < as_of,
+                RawSnapshot.purged_at.is_(None),
             )
         )
         if expired_snapshots:

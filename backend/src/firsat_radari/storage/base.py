@@ -13,3 +13,7 @@ class ObjectStore(ABC):
     @abstractmethod
     def exists(self, key: str) -> bool:
         """Return whether an object exists."""
+
+    @abstractmethod
+    def delete(self, key: str) -> bool:
+        """Delete an object and return True only when it existed."""

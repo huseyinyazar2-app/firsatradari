@@ -283,6 +283,10 @@ class RawSnapshot(Base):
         DateTime(timezone=True),
         index=True,
     )
+    purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        index=True,
+    )
     is_deleted_at_source: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

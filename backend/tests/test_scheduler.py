@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from firsat_radari.config import Settings
 from firsat_radari.connectors.base import CollectionResult, CollectionStatus
 from firsat_radari.db.base import Base
-from firsat_radari.db.models import DataSource, ScheduledJobRun
+from firsat_radari.db.models import DataSource, ScheduledJob, ScheduledJobRun
 from firsat_radari.profiles.service import (
     ProfileInput,
     ResearchProfileService,
@@ -24,6 +24,7 @@ from firsat_radari.scheduler.service import (
     SchedulerError,
     SchedulerService,
 )
+from scripts.bootstrap_pilot_schedules import _enforce_issue_schedule_limit
 
 
 def _context() -> Iterator[Session]:
@@ -108,6 +109,46 @@ def test_ingestion_schedule_respects_configured_page_limit() -> None:
                     created_by="test",
                 )
             )
+    finally:
+        context.close()
+
+
+def test_pilot_issue_schedule_reconciliation_pauses_outside_cohort() -> None:
+    context = _context()
+    session = next(context)
+    try:
+        service = SchedulerService(
+            session,
+            Settings(environment="test", database_url="sqlite://"),
+        )
+        jobs = [
+            service.create(
+                ScheduleInput(
+                    key=f"pilot-github-issues-example/repository-{index}",
+                    job_type="operations_evaluation",
+                    interval_minutes=60,
+                    payload={},
+                    next_run_at=datetime.now(UTC),
+                    created_by="test",
+                )
+            )
+            for index in range(3)
+        ]
+
+        _enforce_issue_schedule_limit(
+            session,
+            service,
+            desired_keys={jobs[0].key, jobs[2].key},
+        )
+
+        session.expire_all()
+        statuses = {
+            job.key: job.status
+            for job in session.query(ScheduledJob).all()
+        }
+        assert statuses[jobs[0].key] == "active"
+        assert statuses[jobs[1].key] == "paused"
+        assert statuses[jobs[2].key] == "active"
     finally:
         context.close()
 

@@ -1,6 +1,7 @@
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -18,10 +19,12 @@ from firsat_radari.db.models import (
     RawSnapshot,
 )
 from firsat_radari.main import create_app
+from firsat_radari.operations.retention import RetentionService
 from firsat_radari.operations.service import (
     CostEntryInput,
     OperationsService,
 )
+from firsat_radari.storage.filesystem import FileObjectStore
 
 
 def _context() -> Iterator[tuple[Session, sessionmaker[Session]]]:
@@ -187,6 +190,71 @@ def test_expired_raw_snapshot_opens_critical_retention_alert() -> None:
         assert result.open_alert_count == 2
         assert retention_alert.severity == "critical"
         assert retention_alert.details == {"count": 1}
+    finally:
+        context.close()
+
+
+def test_retention_cleanup_is_dry_run_by_default_and_closes_alert(
+    tmp_path: Path,
+) -> None:
+    context = _context()
+    session, _ = next(context)
+    try:
+        source = _source(session)
+        now = datetime.now(UTC)
+        store = FileObjectStore(tmp_path)
+        object_key = "example/expired.json"
+        store.put_if_absent(object_key, b'{"value":"expired"}')
+        snapshot = RawSnapshot(
+            source_id=source.id,
+            run_id=None,
+            collection_id=None,
+            external_type="example",
+            external_id="expired-cleanup",
+            observed_at=now - timedelta(days=40),
+            source_created_at=None,
+            source_updated_at=None,
+            content_hash="b" * 64,
+            object_storage_key=object_key,
+            media_type="application/json",
+            schema_hint=None,
+            policy_version="1",
+            retention_until=now - timedelta(days=10),
+            is_deleted_at_source=False,
+        )
+        session.add(snapshot)
+        session.commit()
+        service = RetentionService(session, store)
+
+        dry_run = service.purge_expired(as_of=now)
+
+        assert dry_run.considered_count == 1
+        assert dry_run.purged_count == 0
+        assert dry_run.applied is False
+        assert store.exists(object_key)
+        session.refresh(snapshot)
+        assert snapshot.purged_at is None
+
+        applied = service.purge_expired(as_of=now, apply=True)
+
+        assert applied.considered_count == 1
+        assert applied.purged_count == 1
+        assert applied.missing_object_count == 0
+        assert applied.error_count == 0
+        assert not store.exists(object_key)
+        session.refresh(snapshot)
+        assert snapshot.purged_at is not None
+
+        OperationsService(session).evaluate(
+            as_of=now,
+            freshness_hours=24,
+            daily_budget_usd=Decimal("0"),
+            monthly_budget_usd=Decimal("0"),
+        )
+        retention_alert = session.query(OperationalAlert).filter_by(
+            category="retention_expiry"
+        ).one_or_none()
+        assert retention_alert is None
     finally:
         context.close()
 

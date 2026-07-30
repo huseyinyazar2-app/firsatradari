@@ -1,11 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from firsat_radari.api.dependencies import get_db_session
@@ -156,6 +156,12 @@ def list_problem_evidence(
 ) -> list[ProblemEvidence]:
     statement = (
         select(ProblemEvidence)
+        .where(
+            or_(
+                ProblemEvidence.retention_until.is_(None),
+                ProblemEvidence.retention_until >= datetime.now(UTC),
+            )
+        )
         .order_by(ProblemEvidence.created_at.desc(), ProblemEvidence.id)
         .limit(limit)
     )

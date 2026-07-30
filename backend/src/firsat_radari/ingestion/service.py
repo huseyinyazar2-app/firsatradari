@@ -356,19 +356,39 @@ class IngestionService:
             self._record_timestamp_quality(source, run, item)
             schema_hint = self._record_schema_quality(source, run, item)
             content_hash = hashlib.sha256(content).hexdigest()
-            existing_id = self._session.scalar(
-                select(RawSnapshot.id).where(
+            existing = self._session.scalar(
+                select(RawSnapshot).where(
                     RawSnapshot.source_id == source.id,
                     RawSnapshot.external_type == item.external_type,
                     RawSnapshot.external_id == item.external_id,
                     RawSnapshot.content_hash == content_hash,
                 )
             )
-            if existing_id is not None:
+            if existing is not None:
+                renewed_retention = item.observed_at + timedelta(
+                    days=source.retention_days
+                )
+                if (
+                    existing.retention_until is None
+                    or _as_utc(renewed_retention)
+                    > _as_utc(existing.retention_until)
+                ):
+                    existing.retention_until = renewed_retention
+                if (
+                    existing.purged_at is not None
+                    or not self._object_store.exists(
+                        existing.object_storage_key
+                    )
+                ):
+                    self._object_store.put_if_absent(
+                        existing.object_storage_key,
+                        content,
+                    )
+                    existing.purged_at = None
                 self._record_snapshot_observation(
                     source=source,
                     run=run,
-                    snapshot_id=existing_id,
+                    snapshot_id=existing.id,
                     observed_at=item.observed_at,
                     is_duplicate=True,
                 )
@@ -400,6 +420,7 @@ class IngestionService:
                     schema_hint=schema_hint,
                     policy_version=source.policy_version,
                     retention_until=item.observed_at + timedelta(days=source.retention_days),
+                    purged_at=None,
                     is_deleted_at_source=False,
                 )
             )
