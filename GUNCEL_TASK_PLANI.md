@@ -31,6 +31,7 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [x] Ticari doğrulama/sonuç kayıtları ve satış aktarım kayıtları
 - [x] Scheduler, kota/bütçe alarmları, operasyon raporları ve audit log
 - [x] İlk araştırma paneli ve backend API entegrasyonu
+- [x] Panelden konu girilerek çalıştırılan, 20 sonuçla sınırlı tek seferlik GitHub test araması
 - [x] Docker/Compose/Caddy sunucu paketi, scheduler worker ve yedek doğrulama betikleri
 - [x] GitHub deposu, CI ve düzenli test/build kontrolleri
 
@@ -38,10 +39,11 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 
 - [x] GitHub ve npm için üç keşif kohortu: `workflow automation`, `mcp agent tooling`, `self hosted automation`
 - [x] Aktif GitHub issue taramaları veriyle seçilen en fazla 10 repository ile sınırlandı
-- [x] Güncel sınıflandırıcıyla işlenen kayıt: **532**
-- [x] Kurallı sistemin problem olarak işaretlediği kayıt: **276**; üretilen problem kanıtı: **544**
+- [x] Güncel sınıflandırıcıyla işlenen kayıt: **541**
+- [x] Kurallı sistemin problem olarak işaretlediği kayıt: **281**; üretilen problem kanıtı: **578**
 - [x] Anonim kota nedeniyle yarım kalan dört GitHub taraması yerelde token ile tekrar çalıştırıldı: **192** kayıt, **192** hatasız normalizasyon, **132** yeni problem kanıtı
 - [x] Yeni veriler için analiz tamamlandı: **113** küme ve **1.017** küme metriği üretildi; işlem hatası oluşmadı
+- [x] Panel/API test araması gerçek GitHub verisiyle doğrulandı: `software installation failure` sorgusunda **10** kayıt, **9** başarılı normalizasyon, **34** problem kanıtı; erişilemeyen **1** dış kayıt izole edildi
 - [ ] Etiketlenmiş gerçek veri olmadığı için precision/recall henüz ölçülemiyor
 - [ ] Güçlü, bağımsız ve projeler arası tekrarlanan problem kümeleri için veri henüz yetersiz
 

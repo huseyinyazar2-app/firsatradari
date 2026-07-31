@@ -3,6 +3,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlparse
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -16,6 +17,8 @@ from firsat_radari.connectors.registry import (
 from firsat_radari.db.models import (
     DataSource,
     IngestionRun,
+    RawSnapshot,
+    Repository,
     ScheduledJob,
     ScheduledJobRun,
 )
@@ -234,6 +237,25 @@ class SchedulerService:
             run_ids=tuple(run_ids),
         )
 
+    async def run_radar_scan(
+        self,
+        payload: dict,
+        *,
+        as_of: datetime,
+    ) -> dict:
+        validated = _validated_payload(
+            "radar_scan",
+            payload,
+            ingestion_max_pages=self._settings.ingestion_api_max_pages,
+            normalization_max_items=(
+                self._settings.normalization_api_max_items
+            ),
+            extraction_max_items=(
+                self._settings.problem_extraction_api_max_items
+            ),
+        )
+        return await self._radar_scan(validated, _as_utc(as_of))
+
     async def _execute(self, job: ScheduledJob, now: datetime) -> dict:
         if job.job_type == "operations_evaluation":
             outcome = OperationsService(self._session).evaluate(
@@ -411,6 +433,12 @@ class SchedulerService:
 
     async def _radar_scan(self, payload: dict, now: datetime) -> dict:
         result = {"ingestion": await self._ingest(payload)}
+        if payload["connector_key"] == "github_work_items":
+            result["repository_hydration"] = (
+                await self._hydrate_github_repositories(
+                    result["ingestion"]["ingestion_run_id"]
+                )
+            )
         normalizer = create_normalizer(payload["normalizer_key"])
         if normalizer.source_key != payload["source_key"]:
             raise SchedulerError(
@@ -470,6 +498,88 @@ class SchedulerService:
         }
         result["next_gate"] = "cluster_review_and_claim_approval"
         return result
+
+    async def _hydrate_github_repositories(
+        self,
+        ingestion_run_id: str,
+    ) -> dict:
+        store = FileObjectStore(self._settings.raw_storage_path)
+        repository_names: set[str] = set()
+        snapshots = self._session.scalars(
+            select(RawSnapshot).where(
+                RawSnapshot.run_id == uuid.UUID(ingestion_run_id),
+                RawSnapshot.external_type == "repository_work_item",
+                RawSnapshot.purged_at.is_(None),
+            )
+        )
+        for snapshot in snapshots:
+            try:
+                payload = json.loads(store.read(snapshot.object_storage_key))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            repository_name = _github_repository_full_name(
+                payload.get("repository_url")
+                if isinstance(payload, dict)
+                else None
+            )
+            if repository_name is not None:
+                repository_names.add(repository_name)
+
+        existing_names = {
+            name.casefold()
+            for name in self._session.scalars(select(Repository.full_name))
+        }
+        missing_names = sorted(
+            name
+            for name in repository_names
+            if name.casefold() not in existing_names
+        )
+        for repository_name in missing_names:
+            await self._ingest(
+                {
+                    "source_key": "github",
+                    "connector_key": "github",
+                    "query": {
+                        "q": f"repo:{repository_name}",
+                        "sort": "updated",
+                        "order": "desc",
+                        "per_page": 1,
+                    },
+                    "resume": False,
+                    "max_pages": 1,
+                    "request_cost_usd": "0.000000",
+                }
+            )
+
+        normalized_count = 0
+        normalization_error_count = 0
+        if missing_names:
+            normalization = NormalizationService(
+                self._session,
+                store,
+            ).normalize_pending(
+                create_normalizer("github"),
+                limit=self._settings.normalization_api_max_items,
+            )
+            normalized_count = normalization.success_count
+            normalization_error_count = normalization.error_count
+
+        refreshed_names = {
+            name.casefold()
+            for name in self._session.scalars(select(Repository.full_name))
+        }
+        unresolved_names = [
+            name
+            for name in missing_names
+            if name.casefold() not in refreshed_names
+        ]
+        return {
+            "discovered_count": len(repository_names),
+            "requested_count": len(missing_names),
+            "normalized_count": normalized_count,
+            "unresolved_count": len(unresolved_names),
+            "error_count": normalization_error_count,
+        }
 
 
 def _validated_payload(
@@ -633,3 +743,18 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _github_repository_full_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parsed = urlparse(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc.casefold() != "api.github.com"
+        or len(parts) != 3
+        or parts[0] != "repos"
+    ):
+        return None
+    return f"{parts[1]}/{parts[2]}"

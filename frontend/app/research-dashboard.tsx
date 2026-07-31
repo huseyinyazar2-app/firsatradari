@@ -101,6 +101,39 @@ type ScheduledJobRun = {
   error_message: string | null;
   started_at: string;
 };
+type TestSearchResult = {
+  query: string;
+  ingestion: {
+    status: string;
+    raw_item_count: number;
+    error_count: number;
+  };
+  normalization: {
+    input_count: number;
+    success_count: number;
+    error_count: number;
+  };
+  repository_hydration: {
+    discovered_count: number;
+    requested_count: number;
+    normalized_count: number;
+    unresolved_count: number;
+    error_count: number;
+  };
+  extraction: {
+    input_count: number;
+    evidence_count: number;
+    error_count: number;
+  };
+  clustering: {
+    cluster_count: number;
+    eligible_count: number;
+  };
+  cluster_metrics: {
+    metric_count: number;
+    error_count: number;
+  };
+};
 type Backtest = {
   id: string;
   cutoff_at: string;
@@ -369,6 +402,9 @@ export function ResearchDashboard() {
   const [validationEvidence, setValidationEvidence] = useState("");
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
+  const [testSearchQuery, setTestSearchQuery] = useState("workflow automation");
+  const [testSearchResult, setTestSearchResult] =
+    useState<TestSearchResult | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [capitalBudget, setCapitalBudget] = useState("10000");
   const [maxBuildWeeks, setMaxBuildWeeks] = useState("12");
@@ -1033,6 +1069,33 @@ export function ResearchDashboard() {
     }
   };
 
+  const runTestSearch = async () => {
+    const query = testSearchQuery.trim();
+    if (query.length < 3) {
+      setOperationsError("Test araması en az 3 karakter olmalı.");
+      return;
+    }
+    setActionBusy(true);
+    setOperationsError(null);
+    setTestSearchResult(null);
+    try {
+      const result = await apiRequest<TestSearchResult>("/radar/test-search", {
+        method: "POST",
+        body: JSON.stringify({ query, limit: 20 }),
+      });
+      setTestSearchResult(result);
+      await load();
+    } catch (reason) {
+      setOperationsError(
+        reason instanceof Error
+          ? reason.message
+          : "Test araması tamamlanamadı.",
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const createResearchProfile = async () => {
     setActionBusy(true);
     setProfileError(null);
@@ -1393,6 +1456,8 @@ export function ResearchDashboard() {
                 runs={data.scheduledJobRuns}
                 error={operationsError}
                 busy={actionBusy}
+                testSearchQuery={testSearchQuery}
+                testSearchResult={testSearchResult}
                 hasProfile={Boolean(selectedProfile)}
                 selectedProfileId={selectedProfile?.id ?? ""}
                 onCreateOperations={() =>
@@ -1405,6 +1470,8 @@ export function ResearchDashboard() {
                   void setScheduledJobStatus(id, status)
                 }
                 onRunDue={() => void runDueScheduledJobs()}
+                onTestSearchQuery={setTestSearchQuery}
+                onTestSearch={() => void runTestSearch()}
               />
             )}
             {tab === "reports" && (
@@ -2138,12 +2205,16 @@ function Operations({
   runs,
   error,
   busy,
+  testSearchQuery,
+  testSearchResult,
   hasProfile,
   selectedProfileId,
   onCreateOperations,
   onCreateScoring,
   onStatus,
   onRunDue,
+  onTestSearchQuery,
+  onTestSearch,
 }: {
   summary: OperationsSummary | null;
   alerts: OperationalAlert[];
@@ -2151,12 +2222,16 @@ function Operations({
   runs: ScheduledJobRun[];
   error: string | null;
   busy: boolean;
+  testSearchQuery: string;
+  testSearchResult: TestSearchResult | null;
   hasProfile: boolean;
   selectedProfileId: string;
   onCreateOperations: () => void;
   onCreateScoring: () => void;
   onStatus: (id: string, status: string) => void;
   onRunDue: () => void;
+  onTestSearchQuery: (value: string) => void;
+  onTestSearch: () => void;
 }) {
   const latestRunByJob = new Map<string, ScheduledJobRun>();
   const hasOperationsJob = jobs.some(
@@ -2208,6 +2283,70 @@ function Operations({
           />
         </div>
       )}
+      <div className="panel test-search-panel">
+        <div className="research-heading">
+          <div>
+            <h2>Tek seferlik test araması</h2>
+            <p>
+              GitHub’daki açık sorunları tarar; kayıtları normalize eder, problem
+              kanıtlarını çıkarır ve kümeleri yeniden hesaplar.
+            </p>
+          </div>
+        </div>
+        <form
+          className="test-search-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onTestSearch();
+          }}
+        >
+          <label htmlFor="test-search-query">Aranacak problem veya konu</label>
+          <div>
+            <input
+              id="test-search-query"
+              value={testSearchQuery}
+              minLength={3}
+              maxLength={120}
+              disabled={busy}
+              onChange={(event) => onTestSearchQuery(event.target.value)}
+              placeholder="Örn. workflow automation"
+            />
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={busy || testSearchQuery.trim().length < 3}
+            >
+              {busy ? "Aranıyor…" : "Test aramasını başlat"}
+            </button>
+          </div>
+        </form>
+        {testSearchResult && (
+          <div className="test-search-result" role="status">
+            <strong>“{testSearchResult.query}” araması tamamlandı</strong>
+            <div className="research-summary">
+              <Stat
+                label="Toplanan kayıt"
+                value={testSearchResult.ingestion.raw_item_count}
+              />
+              <Stat
+                label="Problem kanıtı"
+                value={testSearchResult.extraction.evidence_count}
+              />
+              <Stat
+                label="Güncel küme"
+                value={testSearchResult.clustering.cluster_count}
+              />
+            </div>
+            <small>
+              Hata: {testSearchResult.ingestion.error_count +
+                testSearchResult.normalization.error_count +
+                testSearchResult.repository_hydration.error_count +
+                testSearchResult.extraction.error_count +
+                testSearchResult.cluster_metrics.error_count}
+            </small>
+          </div>
+        )}
+      </div>
       <div className="panel table-panel">
         <div className="research-heading">
           <div>

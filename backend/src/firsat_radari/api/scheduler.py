@@ -40,6 +40,11 @@ class RunDueRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=100)
 
 
+class TestRadarSearchRequest(BaseModel):
+    query: str = Field(min_length=3, max_length=120)
+    limit: int = Field(default=20, ge=1, le=25)
+
+
 class ScheduledJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,6 +153,51 @@ async def run_due_scheduled_jobs(
         as_of=request.as_of,
         limit=request.limit,
     )
+
+
+@router.post("/radar/test-search", response_model=dict)
+async def run_test_radar_search(
+    request: TestRadarSearchRequest,
+    session: DatabaseSession,
+    settings: AppSettings,
+) -> dict:
+    _ensure_enabled(settings)
+    query = " ".join(request.query.split()).replace('"', "").strip()
+    if len(query) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Search query must contain at least 3 visible characters",
+        )
+    try:
+        result = await SchedulerService(session, settings).run_radar_scan(
+            {
+                "source_key": "github",
+                "connector_key": "github_work_items",
+                "normalizer_key": "github_work_items",
+                "query": {
+                    "q": (
+                        f"{query} in:title,body is:issue is:open "
+                        "archived:false"
+                    ),
+                    "sort": "updated",
+                    "order": "desc",
+                    "per_page": request.limit,
+                },
+                "max_pages": 1,
+                "normalize_limit": request.limit,
+                "extraction_source_key": "github",
+                "extract_limit": request.limit,
+                "cluster_after_extraction": True,
+                "request_cost_usd": "0",
+            },
+            as_of=datetime.now(UTC),
+        )
+    except SchedulerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return {"query": query, **result}
 
 
 @router.get(

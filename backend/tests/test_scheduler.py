@@ -292,6 +292,62 @@ async def test_problem_analysis_refreshes_extraction_clusters_and_metrics(
 
 
 @pytest.mark.asyncio
+async def test_one_off_radar_scan_is_validated_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    session = next(context)
+    try:
+        service = SchedulerService(
+            session,
+            Settings(
+                environment="test",
+                database_url="sqlite://",
+                ingestion_api_max_pages=1,
+                normalization_api_max_items=50,
+                problem_extraction_api_max_items=50,
+            ),
+        )
+        scan = Mock(return_value={"status": "succeeded"})
+
+        async def run_scan(payload, now):
+            return scan(payload, now)
+
+        monkeypatch.setattr(service, "_radar_scan", run_scan)
+        now = datetime.now(UTC)
+
+        result = await service.run_radar_scan(
+            {
+                "source_key": "github",
+                "connector_key": "github_work_items",
+                "normalizer_key": "github_work_items",
+                "query": {
+                    "q": "workflow automation is:issue is:open",
+                    "per_page": 50,
+                },
+                "max_pages": 1,
+                "normalize_limit": 50,
+                "extraction_source_key": "github",
+                "extract_limit": 50,
+                "cluster_after_extraction": True,
+                "request_cost_usd": "0",
+            },
+            as_of=now,
+        )
+
+        assert result == {"status": "succeeded"}
+        payload, called_at = scan.call_args.args
+        assert payload["connector_key"] == "github_work_items"
+        assert payload["max_pages"] == 1
+        assert payload["normalize_limit"] == 50
+        assert payload["extract_limit"] == 50
+        assert payload["cluster_after_extraction"] is True
+        assert called_at == now
+    finally:
+        context.close()
+
+
+@pytest.mark.asyncio
 async def test_rate_limited_ingestion_fails_the_scheduled_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
