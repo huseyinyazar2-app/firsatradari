@@ -55,6 +55,7 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [x] Docker runtime katmanından geliştirme paketleri çıkarıldı; budama sonrası audit: **0 açık**
 - [x] Güvenlik paketlerini içeren Alpine imajında Sharp native testi ve HTTP 200 smoke testi geçti
 - [x] Frontend lint, build ve render testleri güvenlik yükseltmeleriyle geçti
+- [x] GitHub Actions clean install, frontend lint/render ve backend kontrolleri yeşil
 - [x] Son Vite config uyumluluk düzeltmelerini içeren Docker imajı yeniden üretildi
 - [x] Docker Desktop/varsayılan builder blokajı giderildi; izole BuildKit builder ile final imaj üretildi
 - [x] Güvenlik değişiklikleri test edildi, commit ve GitHub'a push edildi
