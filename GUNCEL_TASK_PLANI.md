@@ -38,9 +38,10 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 
 - [x] GitHub ve npm için üç keşif kohortu: `workflow automation`, `mcp agent tooling`, `self hosted automation`
 - [x] Aktif GitHub issue taramaları veriyle seçilen en fazla 10 repository ile sınırlandı
-- [x] İşlenen kayıt: **340**
-- [x] Kurallı sistemin problem olarak işaretlediği kayıt: **72**
-- [ ] Dört GitHub taraması anonim kota nedeniyle tamamlanmadı; sunucuda GitHub anahtarıyla tekrar çalıştırılacak
+- [x] Güncel sınıflandırıcıyla işlenen kayıt: **532**
+- [x] Kurallı sistemin problem olarak işaretlediği kayıt: **276**; üretilen problem kanıtı: **544**
+- [x] Anonim kota nedeniyle yarım kalan dört GitHub taraması yerelde token ile tekrar çalıştırıldı: **192** kayıt, **192** hatasız normalizasyon, **132** yeni problem kanıtı
+- [x] Yeni veriler için analiz tamamlandı: **113** küme ve **1.017** küme metriği üretildi; işlem hatası oluşmadı
 - [ ] Etiketlenmiş gerçek veri olmadığı için precision/recall henüz ölçülemiyor
 - [ ] Güçlü, bağımsız ve projeler arası tekrarlanan problem kümeleri için veri henüz yetersiz
 
@@ -80,7 +81,8 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [ ] Migration çalıştır ve servisleri ayağa kaldır
 - [ ] API, frontend, scheduler ve veritabanı sağlık kontrollerini yap
 - [ ] Gerçek yedek al ve geri yükleme doğrulamasını çalıştır
-- [ ] Dört kota hatalı GitHub işini yeniden çalıştır
+- [x] Dört kota hatalı GitHub işini token ile yerelde yeniden çalıştır ve doğrula
+- [ ] Sunucu kurulumundan sonra aynı tarama zinciri için üretim smoke testi çalıştır
 
 **Çıkış kapısı:** Sistem sunucuda kesintisiz çalışıyor; scheduler veri topluyor; yedek doğrulanmış.
 
@@ -132,10 +134,9 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 
 ## 6. Şimdiki Net Sıra
 
-1. Güvenlik paketini tamamla ve push et.
-2. Sunucu kurulumunu tamamla.
-3. GitHub anahtarıyla eksik pilot taramalarını bitir.
-4. Pilot veriyi birkaç hafta biriktir ve etiketli kalite ölçümü yap.
-5. Ads/SEO ve üçüncü bağımsız kaynağı ekle.
-6. İlk veri kapısından geçen fırsat kartlarını üret.
-7. Gerçek pazar doğrulama deneylerini çalıştır.
+1. Sunucu kurulumunu tamamla ve üretim smoke testini çalıştır.
+2. GitHub/npm pilotunu birkaç hafta biriktir ve etiketli kalite ölçümü yap.
+3. Birden fazla proje ve bağımsız kaynakta tekrarlanan kümeleri incele.
+4. Ads/SEO ve üçüncü bağımsız kaynağı ekle.
+5. İlk veri kapısından geçen fırsat kartlarını üret.
+6. Gerçek pazar doğrulama deneylerini çalıştır.
