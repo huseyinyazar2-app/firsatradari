@@ -57,7 +57,7 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [x] Frontend lint, build ve render testleri güvenlik yükseltmeleriyle geçti
 - [x] Son Vite config uyumluluk düzeltmelerini içeren Docker imajı yeniden üretildi
 - [x] Docker Desktop/varsayılan builder blokajı giderildi; izole BuildKit builder ile final imaj üretildi
-- [ ] Güvenlik değişiklikleri test edilecek, commit ve GitHub'a push edilecek
+- [x] Güvenlik değişiklikleri test edildi, commit ve GitHub'a push edildi
 
 ## 5. Sıradaki Ana Aşamalar
 
@@ -66,7 +66,7 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [x] Son frontend Docker build sonucunu doğrula
 - [x] Konteyner HTTP 200, Next/React/PostCSS/Sharp sürümleri ve native Sharp testini doğrula
 - [x] Frontend lint, test ve production audit çalıştır
-- [ ] Commit ve push
+- [x] Commit ve push
 
 **Çıkış kapısı:** Üretim imajı çalışıyor, production audit sıfır, çalışma ağacı temiz.
 
