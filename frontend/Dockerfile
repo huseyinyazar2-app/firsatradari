@@ -11,7 +11,8 @@ COPY . .
 ARG VITE_FIRSAT_API_URL=/api
 ENV VITE_FIRSAT_API_URL=$VITE_FIRSAT_API_URL
 
-RUN npm run build
+RUN npm run build \
+    && npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM node:22-alpine AS runtime
 
