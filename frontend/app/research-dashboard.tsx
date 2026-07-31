@@ -366,9 +366,9 @@ const LABELS: Record<string, string> = {
 
 export function ResearchDashboard() {
   const [tab, setTab] = useState<
-    "radar" | "problems" | "sources" | "backtests" | "operations"
+    "search" | "radar" | "problems" | "sources" | "backtests" | "operations"
     | "reports" | "validation" | "profile"
-  >("radar");
+  >("search");
   const [apiUrl, setApiUrl] = useState(initialApiUrl);
   const [draftUrl, setDraftUrl] = useState(initialApiUrl);
   const [apiKey, setApiKey] = useState(initialApiKey);
@@ -402,6 +402,7 @@ export function ResearchDashboard() {
   const [validationEvidence, setValidationEvidence] = useState("");
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [operationsError, setOperationsError] = useState<string | null>(null);
+  const [testSearchError, setTestSearchError] = useState<string | null>(null);
   const [testSearchQuery, setTestSearchQuery] = useState("workflow automation");
   const [testSearchResult, setTestSearchResult] =
     useState<TestSearchResult | null>(null);
@@ -1072,11 +1073,11 @@ export function ResearchDashboard() {
   const runTestSearch = async () => {
     const query = testSearchQuery.trim();
     if (query.length < 3) {
-      setOperationsError("Test araması en az 3 karakter olmalı.");
+      setTestSearchError("Test araması en az 3 karakter olmalı.");
       return;
     }
     setActionBusy(true);
-    setOperationsError(null);
+    setTestSearchError(null);
     setTestSearchResult(null);
     try {
       const result = await apiRequest<TestSearchResult>("/radar/test-search", {
@@ -1086,7 +1087,7 @@ export function ResearchDashboard() {
       setTestSearchResult(result);
       await load();
     } catch (reason) {
-      setOperationsError(
+      setTestSearchError(
         reason instanceof Error
           ? reason.message
           : "Test araması tamamlanamadı.",
@@ -1263,6 +1264,9 @@ export function ResearchDashboard() {
           </div>
         </div>
         <nav aria-label="Ana menü">
+          <Nav active={tab === "search"} onClick={() => setTab("search")}>
+            Test araması
+          </Nav>
           <Nav active={tab === "radar"} onClick={() => setTab("radar")}>
             Radar
           </Nav>
@@ -1310,7 +1314,9 @@ export function ResearchDashboard() {
           <div>
             <p className="eyebrow">VERİ TEMELLİ KEŞİF</p>
             <h1>
-              {tab === "radar"
+              {tab === "search"
+                ? "Test araması"
+                : tab === "radar"
                 ? "Fırsat radarı"
                 : tab === "problems"
                   ? "Problem keşfi"
@@ -1431,6 +1437,17 @@ export function ResearchDashboard() {
                 onExport={() => void prepareExport()}
               />
             )}
+            {tab === "search" && (
+              <TestSearch
+                error={testSearchError}
+                busy={actionBusy}
+                query={testSearchQuery}
+                result={testSearchResult}
+                onQuery={setTestSearchQuery}
+                onSearch={() => void runTestSearch()}
+                onShowProblems={() => setTab("problems")}
+              />
+            )}
             {tab === "problems" && <Problems clusters={data.clusters} />}
             {tab === "sources" && (
               <Sources
@@ -1456,8 +1473,6 @@ export function ResearchDashboard() {
                 runs={data.scheduledJobRuns}
                 error={operationsError}
                 busy={actionBusy}
-                testSearchQuery={testSearchQuery}
-                testSearchResult={testSearchResult}
                 hasProfile={Boolean(selectedProfile)}
                 selectedProfileId={selectedProfile?.id ?? ""}
                 onCreateOperations={() =>
@@ -1470,8 +1485,6 @@ export function ResearchDashboard() {
                   void setScheduledJobStatus(id, status)
                 }
                 onRunDue={() => void runDueScheduledJobs()}
-                onTestSearchQuery={setTestSearchQuery}
-                onTestSearch={() => void runTestSearch()}
               />
             )}
             {tab === "reports" && (
@@ -2198,6 +2211,188 @@ function Backtests({ rows }: { rows: Backtest[] }) {
   );
 }
 
+const TEST_SEARCH_EXAMPLES = [
+  "workflow automation errors",
+  "self hosted backup failure",
+  "developer onboarding friction",
+  "API rate limit problems",
+];
+
+function TestSearch({
+  error,
+  busy,
+  query,
+  result,
+  onQuery,
+  onSearch,
+  onShowProblems,
+}: {
+  error: string | null;
+  busy: boolean;
+  query: string;
+  result: TestSearchResult | null;
+  onQuery: (value: string) => void;
+  onSearch: () => void;
+  onShowProblems: () => void;
+}) {
+  const totalErrors = result
+    ? result.ingestion.error_count +
+      result.normalization.error_count +
+      result.repository_hydration.error_count +
+      result.extraction.error_count +
+      result.cluster_metrics.error_count
+    : 0;
+  return (
+    <section className="search-layout">
+      {error && (
+        <div className="state-panel compact-state" role="alert">
+          <strong>Test araması tamamlanamadı</strong>
+          <p>{error}</p>
+        </div>
+      )}
+      <div className="panel search-guide-panel">
+        <div>
+          <p className="eyebrow">NE YAZMALISIN?</p>
+          <h2>Bir ürün fikri değil, araştırılacak problem alanını yaz</h2>
+          <p>
+            Şimdilik açık GitHub issue başlıkları ve açıklamaları taranıyor. Bu
+            yüzden İngilizce, somut ve 2–6 kelimelik problem ifadeleri en iyi
+            sonucu verir.
+          </p>
+        </div>
+        <div className="search-examples" aria-label="Örnek test aramaları">
+          {TEST_SEARCH_EXAMPLES.map((example) => (
+            <button
+              type="button"
+              className="search-example"
+              key={example}
+              disabled={busy}
+              onClick={() => onQuery(example)}
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+        <p className="search-caveat">
+          “Bana iş fikri bul” veya uzun bir proje tarifi yazma. Bu ekran sohbet
+          etmez; sahadaki açık problem kayıtlarını arar. Genel tüketici talebi,
+          Google Ads ve SEO verisi henüz bu test aramasının kapsamında değildir.
+        </p>
+      </div>
+
+      <div className="panel test-search-panel">
+        <div className="research-heading">
+          <div>
+            <h2>Tek seferlik canlı arama</h2>
+            <p>En fazla 20 güncel, açık ve herkese açık GitHub kaydı işlenir.</p>
+          </div>
+        </div>
+        <form
+          className="test-search-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSearch();
+          }}
+        >
+          <label htmlFor="test-search-query">Problem alanı veya konu</label>
+          <div>
+            <input
+              id="test-search-query"
+              value={query}
+              minLength={3}
+              maxLength={120}
+              disabled={busy}
+              onChange={(event) => onQuery(event.target.value)}
+              placeholder="Örn. workflow automation errors"
+              autoComplete="off"
+            />
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={busy || query.trim().length < 3}
+            >
+              {busy ? "Veriler araştırılıyor…" : "Test aramasını başlat"}
+            </button>
+          </div>
+        </form>
+        {busy && (
+          <p className="search-progress" role="status">
+            GitHub kayıtları alınıyor, doğrulanıyor ve problem kümeleri
+            hesaplanıyor. Bu işlem yaklaşık 1–2 dakika sürebilir.
+          </p>
+        )}
+        {result && (
+          <div className="test-search-result" role="status" aria-live="polite">
+            <div className="search-result-heading">
+              <div>
+                <strong>“{result.query}” araması tamamlandı</strong>
+                <small>
+                  Sonuçlar mevcut veri havuzuyla birlikte değerlendirildi.
+                </small>
+              </div>
+              <button className="ghost-button" onClick={onShowProblems}>
+                Problem kümelerini gör
+              </button>
+            </div>
+            <div className="search-result-stats">
+              <Stat label="Toplanan" value={result.ingestion.raw_item_count} />
+              <Stat
+                label="Normalize edilen"
+                value={result.normalization.success_count}
+              />
+              <Stat
+                label="Problem kanıtı"
+                value={result.extraction.evidence_count}
+              />
+              <Stat
+                label="Güncel küme"
+                value={result.clustering.cluster_count}
+              />
+              <Stat label="Hata" value={totalErrors} />
+            </div>
+            <p>
+              Bir kayıt bulunması otomatik olarak fırsat olduğu anlamına gelmez.
+              Sistem; tekrar, farklı proje/kaynak desteği ve istatistiksel güven
+              kapıları geçilmeden fırsat kartı üretmez.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="panel search-process-panel">
+        <div className="research-heading">
+          <div>
+            <h2>Arka planda ne olacak?</h2>
+            <p>Arama, ham kayıttan kanıtlı fırsata doğru kontrollü ilerler.</p>
+          </div>
+        </div>
+        <ol className="search-process">
+          <li>
+            <strong>Kaynak taraması</strong>
+            <span>Açık GitHub issue başlık ve açıklamalarında sorgu aranır.</span>
+          </li>
+          <li>
+            <strong>Bağlam doğrulama</strong>
+            <span>Deponun kimliği ve metadata bilgileri doğrulanır.</span>
+          </li>
+          <li>
+            <strong>Temizleme</strong>
+            <span>Kayıtlar saklanır, tekilleştirilir ve ortak şemaya çevrilir.</span>
+          </li>
+          <li>
+            <strong>Problem çıkarımı</strong>
+            <span>Hata, engel, eksik özellik ve sürtünme sinyalleri aranır.</span>
+          </li>
+          <li>
+            <strong>İstatistiksel kapı</strong>
+            <span>Benzer sinyaller kümelenir; tekrar ve güven metrikleri hesaplanır.</span>
+          </li>
+        </ol>
+      </div>
+    </section>
+  );
+}
+
 function Operations({
   summary,
   alerts,
@@ -2205,16 +2400,12 @@ function Operations({
   runs,
   error,
   busy,
-  testSearchQuery,
-  testSearchResult,
   hasProfile,
   selectedProfileId,
   onCreateOperations,
   onCreateScoring,
   onStatus,
   onRunDue,
-  onTestSearchQuery,
-  onTestSearch,
 }: {
   summary: OperationsSummary | null;
   alerts: OperationalAlert[];
@@ -2222,16 +2413,12 @@ function Operations({
   runs: ScheduledJobRun[];
   error: string | null;
   busy: boolean;
-  testSearchQuery: string;
-  testSearchResult: TestSearchResult | null;
   hasProfile: boolean;
   selectedProfileId: string;
   onCreateOperations: () => void;
   onCreateScoring: () => void;
   onStatus: (id: string, status: string) => void;
   onRunDue: () => void;
-  onTestSearchQuery: (value: string) => void;
-  onTestSearch: () => void;
 }) {
   const latestRunByJob = new Map<string, ScheduledJobRun>();
   const hasOperationsJob = jobs.some(
@@ -2283,70 +2470,6 @@ function Operations({
           />
         </div>
       )}
-      <div className="panel test-search-panel">
-        <div className="research-heading">
-          <div>
-            <h2>Tek seferlik test araması</h2>
-            <p>
-              GitHub’daki açık sorunları tarar; kayıtları normalize eder, problem
-              kanıtlarını çıkarır ve kümeleri yeniden hesaplar.
-            </p>
-          </div>
-        </div>
-        <form
-          className="test-search-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onTestSearch();
-          }}
-        >
-          <label htmlFor="test-search-query">Aranacak problem veya konu</label>
-          <div>
-            <input
-              id="test-search-query"
-              value={testSearchQuery}
-              minLength={3}
-              maxLength={120}
-              disabled={busy}
-              onChange={(event) => onTestSearchQuery(event.target.value)}
-              placeholder="Örn. workflow automation"
-            />
-            <button
-              className="primary-button"
-              type="submit"
-              disabled={busy || testSearchQuery.trim().length < 3}
-            >
-              {busy ? "Aranıyor…" : "Test aramasını başlat"}
-            </button>
-          </div>
-        </form>
-        {testSearchResult && (
-          <div className="test-search-result" role="status">
-            <strong>“{testSearchResult.query}” araması tamamlandı</strong>
-            <div className="research-summary">
-              <Stat
-                label="Toplanan kayıt"
-                value={testSearchResult.ingestion.raw_item_count}
-              />
-              <Stat
-                label="Problem kanıtı"
-                value={testSearchResult.extraction.evidence_count}
-              />
-              <Stat
-                label="Güncel küme"
-                value={testSearchResult.clustering.cluster_count}
-              />
-            </div>
-            <small>
-              Hata: {testSearchResult.ingestion.error_count +
-                testSearchResult.normalization.error_count +
-                testSearchResult.repository_hydration.error_count +
-                testSearchResult.extraction.error_count +
-                testSearchResult.cluster_metrics.error_count}
-            </small>
-          </div>
-        )}
-      </div>
       <div className="panel table-panel">
         <div className="research-heading">
           <div>
