@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,7 +18,10 @@ from firsat_radari.connectors.registry import (
 from firsat_radari.db.models import (
     DataSource,
     IngestionRun,
+    NormalizedDocument,
+    ProblemEvidence,
     RawSnapshot,
+    RawSnapshotObservation,
     Repository,
     ScheduledJob,
     ScheduledJobRun,
@@ -242,6 +246,7 @@ class SchedulerService:
         payload: dict,
         *,
         as_of: datetime,
+        search_query: str | None = None,
     ) -> dict:
         validated = _validated_payload(
             "radar_scan",
@@ -254,7 +259,13 @@ class SchedulerService:
                 self._settings.problem_extraction_api_max_items
             ),
         )
-        return await self._radar_scan(validated, _as_utc(as_of))
+        result = await self._radar_scan(validated, _as_utc(as_of))
+        if search_query is not None:
+            result["search_report"] = self._search_report(
+                search_query,
+                uuid.UUID(result["ingestion"]["ingestion_run_id"]),
+            )
+        return result
 
     async def _execute(self, job: ScheduledJob, now: datetime) -> dict:
         if job.job_type == "operations_evaluation":
@@ -450,6 +461,9 @@ class SchedulerService:
         ).normalize_pending(
             normalizer,
             limit=payload["normalize_limit"],
+            ingestion_run_id=uuid.UUID(
+                result["ingestion"]["ingestion_run_id"]
+            ),
         )
         result["normalization"] = {
             "run_id": str(normalization.run_id),
@@ -467,9 +481,32 @@ class SchedulerService:
             extractor = StackExchangeProblemEvidenceExtractor(self._session)
         else:
             raise SchedulerError("Unsupported scheduled extraction source")
-        extraction = extractor.extract_pending(
-            limit=payload["extract_limit"]
+        ingestion_run_id = uuid.UUID(
+            result["ingestion"]["ingestion_run_id"]
         )
+        document_ids = tuple(
+            self._session.scalars(
+                select(NormalizedDocument.id)
+                .join(
+                    RawSnapshotObservation,
+                    RawSnapshotObservation.snapshot_id
+                    == NormalizedDocument.snapshot_id,
+                )
+                .where(
+                    RawSnapshotObservation.run_id == ingestion_run_id,
+                    NormalizedDocument.status == "succeeded",
+                )
+            )
+        )
+        if extraction_source == "github":
+            extraction = extractor.extract_pending(
+                limit=payload["extract_limit"],
+                document_ids=document_ids,
+            )
+        else:
+            extraction = extractor.extract_pending(
+                limit=payload["extract_limit"]
+            )
         result["extraction"] = {
             "run_id": str(extraction.run_id),
             "input_count": extraction.input_count,
@@ -506,8 +543,13 @@ class SchedulerService:
         store = FileObjectStore(self._settings.raw_storage_path)
         repository_names: set[str] = set()
         snapshots = self._session.scalars(
-            select(RawSnapshot).where(
-                RawSnapshot.run_id == uuid.UUID(ingestion_run_id),
+            select(RawSnapshot)
+            .join(
+                RawSnapshotObservation,
+                RawSnapshotObservation.snapshot_id == RawSnapshot.id,
+            )
+            .where(
+                RawSnapshotObservation.run_id == uuid.UUID(ingestion_run_id),
                 RawSnapshot.external_type == "repository_work_item",
                 RawSnapshot.purged_at.is_(None),
             )
@@ -534,8 +576,9 @@ class SchedulerService:
             for name in repository_names
             if name.casefold() not in existing_names
         )
+        repository_ingestion_run_ids = []
         for repository_name in missing_names:
-            await self._ingest(
+            repository_ingestion = await self._ingest(
                 {
                     "source_key": "github",
                     "connector_key": "github",
@@ -550,19 +593,23 @@ class SchedulerService:
                     "request_cost_usd": "0.000000",
                 }
             )
+            repository_ingestion_run_ids.append(
+                uuid.UUID(repository_ingestion["ingestion_run_id"])
+            )
 
         normalized_count = 0
         normalization_error_count = 0
-        if missing_names:
+        for repository_run_id in repository_ingestion_run_ids:
             normalization = NormalizationService(
                 self._session,
                 store,
             ).normalize_pending(
                 create_normalizer("github"),
                 limit=self._settings.normalization_api_max_items,
+                ingestion_run_id=repository_run_id,
             )
-            normalized_count = normalization.success_count
-            normalization_error_count = normalization.error_count
+            normalized_count += normalization.success_count
+            normalization_error_count += normalization.error_count
 
         refreshed_names = {
             name.casefold()
@@ -579,6 +626,154 @@ class SchedulerService:
             "normalized_count": normalized_count,
             "unresolved_count": len(unresolved_names),
             "error_count": normalization_error_count,
+        }
+
+    def _search_report(
+        self,
+        query: str,
+        ingestion_run_id: uuid.UUID,
+    ) -> dict:
+        collected_count = len(
+            list(
+                self._session.scalars(
+                    select(RawSnapshotObservation.id).where(
+                        RawSnapshotObservation.run_id == ingestion_run_id
+                    )
+                )
+            )
+        )
+        documents = list(
+            self._session.scalars(
+                select(NormalizedDocument)
+                .join(
+                    RawSnapshotObservation,
+                    RawSnapshotObservation.snapshot_id
+                    == NormalizedDocument.snapshot_id,
+                )
+                .where(
+                    RawSnapshotObservation.run_id == ingestion_run_id,
+                    NormalizedDocument.normalizer_key == "github_work_item",
+                    NormalizedDocument.document_type == "issue",
+                    NormalizedDocument.status == "succeeded",
+                )
+                .order_by(NormalizedDocument.source_updated_at.desc())
+            )
+        )
+        document_ids = tuple(document.id for document in documents)
+        evidence = (
+            list(
+                self._session.scalars(
+                    select(ProblemEvidence).where(
+                        ProblemEvidence.document_id.in_(document_ids)
+                    )
+                )
+            )
+            if document_ids
+            else []
+        )
+        evidence_by_document: dict[uuid.UUID, list[ProblemEvidence]] = {}
+        for item in evidence:
+            evidence_by_document.setdefault(item.document_id, []).append(item)
+
+        relevant = [
+            document
+            for document in documents
+            if _is_search_relevant(
+                document,
+                query,
+                evidence_by_document.get(document.id, []),
+            )
+        ]
+        relevant_ids = {document.id for document in relevant}
+        relevant_evidence = [
+            item for item in evidence if item.document_id in relevant_ids
+        ]
+        themes: dict[str, dict] = {}
+        for document in relevant:
+            key, label = _search_theme(document)
+            theme = themes.setdefault(
+                key,
+                {
+                    "key": key,
+                    "label": label,
+                    "document_count": 0,
+                    "repository_names": set(),
+                    "evidence_count": 0,
+                    "examples": [],
+                },
+            )
+            theme["document_count"] += 1
+            repository_name = str(
+                document.attributes.get("repository_full_name", "")
+            ).strip()
+            if repository_name:
+                theme["repository_names"].add(repository_name)
+            theme_evidence = evidence_by_document.get(document.id, [])
+            theme["evidence_count"] += len(theme_evidence)
+            if len(theme["examples"]) < 3:
+                theme["examples"].append(
+                    {
+                        "title": document.title,
+                        "url": document.canonical_url,
+                        "excerpt": (
+                            theme_evidence[0].excerpt
+                            if theme_evidence
+                            else (document.body or "")[:240]
+                        ),
+                    }
+                )
+        theme_rows = []
+        for theme in themes.values():
+            repository_names = sorted(theme.pop("repository_names"))
+            theme["repository_count"] = len(repository_names)
+            theme["repository_names"] = repository_names
+            theme_rows.append(theme)
+        theme_rows.sort(
+            key=lambda item: (
+                item["document_count"],
+                item["repository_count"],
+                item["evidence_count"],
+            ),
+            reverse=True,
+        )
+
+        strongest = theme_rows[0] if theme_rows else None
+        has_repeated_signal = bool(
+            strongest
+            and strongest["document_count"] >= 3
+            and strongest["repository_count"] >= 2
+            and strongest["evidence_count"] >= 3
+        )
+        verdict = "weak_signal" if has_repeated_signal else "no_opportunity"
+        reasons = [
+            "Bu test yalnızca GitHub verisini kullanıyor; bağımsız bir ikinci kaynak henüz yok."
+        ]
+        if not relevant:
+            reasons.insert(
+                0,
+                "Aramayla ilgili, gerçek bir problemi anlatan güvenilir kayıt bulunamadı.",
+            )
+        elif not has_repeated_signal:
+            reasons.insert(
+                0,
+                "Aynı problemin en az 3 kayıtta ve 2 farklı projede tekrarlandığı gösterilemedi.",
+            )
+        else:
+            reasons.insert(
+                0,
+                "Tekrarlanan bir problem sinyali var; fırsat sayılması için "
+                "başka kaynaklarla doğrulanmalı.",
+            )
+        return {
+            "verdict": verdict,
+            "source": "GitHub açık issue kayıtları",
+            "collected_count": collected_count,
+            "relevant_count": len(relevant),
+            "excluded_count": collected_count - len(relevant),
+            "evidence_count": len(relevant_evidence),
+            "theme_count": len(theme_rows),
+            "reasons": reasons,
+            "themes": theme_rows[:5],
         }
 
 
@@ -758,3 +953,106 @@ def _github_repository_full_name(value: object) -> str | None:
     ):
         return None
     return f"{parts[1]}/{parts[2]}"
+
+
+_SEARCH_STOP_WORDS = frozenset(
+    {
+        "app",
+        "application",
+        "applications",
+        "project",
+        "service",
+        "software",
+        "system",
+        "tool",
+        "tools",
+    }
+)
+_SEARCH_NOISE_PATTERNS = (
+    "job alert",
+    "job notification",
+    "jobs scraped",
+    "market report",
+    "market size",
+    "market share",
+    "market growth",
+    "market forecast",
+    "press release",
+    "news-wires",
+)
+_SEARCH_PROBLEM_PATTERN = re.compile(
+    r"\b(bug|broken|cannot|can't|crash|error|fail(?:ed|ing|s|ure)?|"
+    r"feature request|issue|missing|not working|problem|regression|request|"
+    r"slow|support|unable|unusable|workaround)\b",
+    re.IGNORECASE,
+)
+_SEARCH_THEME_RULES = (
+    (
+        "setup_configuration",
+        "Kurulum ve yapılandırma sorunu",
+        re.compile(r"\b(install|setup|configur|deploy|environment)\w*\b", re.I),
+    ),
+    (
+        "integration_sync",
+        "Entegrasyon ve veri eşitleme sorunu",
+        re.compile(r"\b(api|integrat|connect|sync|import|export|webhook)\w*\b", re.I),
+    ),
+    (
+        "performance",
+        "Performans ve gecikme sorunu",
+        re.compile(r"\b(slow|latency|performance|timeout|memory|cpu)\w*\b", re.I),
+    ),
+    (
+        "security_access",
+        "Güvenlik ve erişim sorunu",
+        re.compile(r"\b(security|privacy|auth|permission|access|token)\w*\b", re.I),
+    ),
+    (
+        "manual_workflow",
+        "Manuel iş ve geçici çözüm ihtiyacı",
+        re.compile(r"\b(manual|workaround|copy.?paste|spreadsheet)\w*\b", re.I),
+    ),
+    (
+        "missing_capability",
+        "Eksik özellik veya destek ihtiyacı",
+        re.compile(r"\b(feature request|missing|support for|ability to)\b", re.I),
+    ),
+    (
+        "reliability",
+        "Hata ve güvenilirlik sorunu",
+        re.compile(r"\b(bug|broken|crash|error|fail|regression|unusable)\w*\b", re.I),
+    ),
+)
+
+
+def _is_search_relevant(
+    document: NormalizedDocument,
+    query: str,
+    evidence: list[ProblemEvidence],
+) -> bool:
+    title = document.title or ""
+    body = document.body or ""
+    title_text = title.casefold()
+    text = f"{title}\n{body}".casefold()
+    if bool(document.attributes.get("is_bot_likely", False)):
+        return False
+    if len(title) > 300 or title.count("\n") > 2:
+        return False
+    if any(pattern in text for pattern in _SEARCH_NOISE_PATTERNS):
+        return False
+    query_tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", query.casefold())
+        if len(token) >= 3 and token not in _SEARCH_STOP_WORDS
+    }
+    if query_tokens and not any(token in title_text for token in query_tokens):
+        return False
+    return bool(evidence) and _SEARCH_PROBLEM_PATTERN.search(title) is not None
+
+
+def _search_theme(document: NormalizedDocument) -> tuple[str, str]:
+    text = f"{document.title or ''}\n{document.body or ''}"
+    for key, label, pattern in _SEARCH_THEME_RULES:
+        if pattern.search(text):
+            return key, label
+    return "recurring_problem", "Tekrarlanan genel problem"

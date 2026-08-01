@@ -952,3 +952,29 @@ async def test_problem_clustering_requires_cross_project_repetition(
         assert decisions_response.status_code == 200
         assert len(decisions_response.json()) == 1
         assert decisions_response.json()[0]["eligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_problem_extraction_can_be_scoped_to_selected_documents(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    add_github_source_and_repository(session)
+    await ingest_and_normalize(
+        session,
+        FileObjectStore(tmp_path),
+        work_items(count=3),
+    )
+    document_ids = tuple(
+        session.scalars(
+            select(NormalizedDocument.id).order_by(NormalizedDocument.id)
+        )
+    )
+
+    outcome = GitHubProblemEvidenceExtractor(session).extract_pending(
+        document_ids=(document_ids[0],),
+    )
+
+    assert outcome.input_count == 1
+    records = list(session.scalars(select(ProblemExtractionRecord)))
+    assert [record.document_id for record in records] == [document_ids[0]]

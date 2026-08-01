@@ -125,13 +125,28 @@ type TestSearchResult = {
     evidence_count: number;
     error_count: number;
   };
-  clustering: {
-    cluster_count: number;
-    eligible_count: number;
-  };
-  cluster_metrics: {
-    metric_count: number;
-    error_count: number;
+  search_report: {
+    verdict: "weak_signal" | "no_opportunity";
+    source: string;
+    collected_count: number;
+    relevant_count: number;
+    excluded_count: number;
+    evidence_count: number;
+    theme_count: number;
+    reasons: string[];
+    themes: Array<{
+      key: string;
+      label: string;
+      document_count: number;
+      repository_count: number;
+      repository_names: string[];
+      evidence_count: number;
+      examples: Array<{
+        title: string | null;
+        url: string | null;
+        excerpt: string;
+      }>;
+    }>;
   };
 };
 type Backtest = {
@@ -332,7 +347,7 @@ const EMPTY: DashboardData = {
   profiles: [],
 };
 const DEFAULT_API_URL =
-  import.meta.env.VITE_FIRSAT_API_URL ?? "http://127.0.0.1:8000";
+  import.meta.env.VITE_FIRSAT_API_URL ?? "/api";
 const EMPTY_DETAIL: DetailData = {
   reviews: [],
   researchRuns: [],
@@ -1445,7 +1460,6 @@ export function ResearchDashboard() {
                 result={testSearchResult}
                 onQuery={setTestSearchQuery}
                 onSearch={() => void runTestSearch()}
-                onShowProblems={() => setTab("problems")}
               />
             )}
             {tab === "problems" && <Problems clusters={data.clusters} />}
@@ -2225,7 +2239,6 @@ function TestSearch({
   result,
   onQuery,
   onSearch,
-  onShowProblems,
 }: {
   error: string | null;
   busy: boolean;
@@ -2233,14 +2246,12 @@ function TestSearch({
   result: TestSearchResult | null;
   onQuery: (value: string) => void;
   onSearch: () => void;
-  onShowProblems: () => void;
 }) {
   const totalErrors = result
     ? result.ingestion.error_count +
       result.normalization.error_count +
       result.repository_hydration.error_count +
-      result.extraction.error_count +
-      result.cluster_metrics.error_count
+      result.extraction.error_count
     : 0;
   return (
     <section className="search-layout">
@@ -2325,36 +2336,69 @@ function TestSearch({
           <div className="test-search-result" role="status" aria-live="polite">
             <div className="search-result-heading">
               <div>
-                <strong>“{result.query}” araması tamamlandı</strong>
+                <strong>
+                  {result.search_report.verdict === "weak_signal"
+                    ? "İncelenmeye değer zayıf bir sinyal bulundu"
+                    : "Bu aramada fırsat doğrulanamadı"}
+                </strong>
                 <small>
-                  Sonuçlar mevcut veri havuzuyla birlikte değerlendirildi.
+                  “{result.query}” · {result.search_report.source}
                 </small>
               </div>
-              <button className="ghost-button" onClick={onShowProblems}>
-                Problem kümelerini gör
-              </button>
             </div>
             <div className="search-result-stats">
-              <Stat label="Toplanan" value={result.ingestion.raw_item_count} />
               <Stat
-                label="Normalize edilen"
-                value={result.normalization.success_count}
+                label="İncelenen"
+                value={result.search_report.collected_count}
               />
               <Stat
-                label="Problem kanıtı"
-                value={result.extraction.evidence_count}
+                label="İlgili problem"
+                value={result.search_report.relevant_count}
               />
               <Stat
-                label="Güncel küme"
-                value={result.clustering.cluster_count}
+                label="Elenen gürültü"
+                value={result.search_report.excluded_count}
+              />
+              <Stat
+                label="İlgili kanıt"
+                value={result.search_report.evidence_count}
               />
               <Stat label="Hata" value={totalErrors} />
             </div>
-            <p>
-              Bir kayıt bulunması otomatik olarak fırsat olduğu anlamına gelmez.
-              Sistem; tekrar, farklı proje/kaynak desteği ve istatistiksel güven
-              kapıları geçilmeden fırsat kartı üretmez.
-            </p>
+            <ul className="search-result-reasons">
+              {result.search_report.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+            {result.search_report.themes.length > 0 && (
+              <div className="search-result-themes">
+                <h3>Bulunan problem temaları</h3>
+                {result.search_report.themes.map((theme) => (
+                  <article key={theme.key}>
+                    <div>
+                      <strong>{theme.label}</strong>
+                      <small>
+                        {theme.document_count} kayıt · {theme.repository_count}{" "}
+                        farklı proje · {theme.evidence_count} kanıt
+                      </small>
+                    </div>
+                    <ul>
+                      {theme.examples.map((example) => (
+                        <li key={`${theme.key}-${example.url ?? example.title}`}>
+                          {example.url ? (
+                            <a href={example.url} target="_blank" rel="noreferrer">
+                              {example.title || "Kaydı aç"}
+                            </a>
+                          ) : (
+                            example.title
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

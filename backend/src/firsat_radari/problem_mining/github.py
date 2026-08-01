@@ -171,7 +171,12 @@ class GitHubProblemEvidenceExtractor:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def extract_pending(self, *, limit: int = 500) -> ProblemExtractionOutcome:
+    def extract_pending(
+        self,
+        *,
+        limit: int = 500,
+        document_ids: tuple[uuid.UUID, ...] | None = None,
+    ) -> ProblemExtractionOutcome:
         if not 1 <= limit <= 10_000:
             raise ValueError("limit must be between 1 and 10000")
         source = self._session.scalar(
@@ -198,20 +203,27 @@ class GitHubProblemEvidenceExtractor:
             ProblemExtractionRecord.extractor_key == EXTRACTOR_KEY,
             ProblemExtractionRecord.extractor_version == EXTRACTOR_VERSION,
         )
+        document_query = (
+            select(NormalizedDocument, RawSnapshot)
+            .join(
+                RawSnapshot,
+                RawSnapshot.id == NormalizedDocument.snapshot_id,
+            )
+            .where(
+                NormalizedDocument.normalizer_key == "github_work_item",
+                NormalizedDocument.normalizer_version == "1.0.0",
+                NormalizedDocument.document_type == "issue",
+                NormalizedDocument.status == "succeeded",
+                ~processed,
+            )
+        )
+        if document_ids is not None:
+            document_query = document_query.where(
+                NormalizedDocument.id.in_(document_ids)
+            )
         documents = list(
             self._session.execute(
-                select(NormalizedDocument, RawSnapshot)
-                .join(
-                    RawSnapshot,
-                    RawSnapshot.id == NormalizedDocument.snapshot_id,
-                )
-                .where(
-                    NormalizedDocument.normalizer_key == "github_work_item",
-                    NormalizedDocument.normalizer_version == "1.0.0",
-                    NormalizedDocument.document_type == "issue",
-                    NormalizedDocument.status == "succeeded",
-                    ~processed,
-                )
+                document_query
                 .order_by(NormalizedDocument.normalized_at, NormalizedDocument.id)
                 .limit(limit)
             )

@@ -46,7 +46,7 @@ test("removes the disposable starter and keeps API integration local", async () 
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(dashboard, /http:\/\/127\.0\.0\.1:8000/);
+  assert.match(dashboard, /VITE_FIRSAT_API_URL \?\? "\/api"/);
   assert.match(dashboard, /\/problem-clusters\?status=cross_entity_candidate/);
   assert.match(dashboard, /\/opportunity-score-runs/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);

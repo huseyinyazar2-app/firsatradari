@@ -13,7 +13,12 @@ from sqlalchemy.pool import StaticPool
 from firsat_radari.config import Settings
 from firsat_radari.connectors.base import CollectionResult, CollectionStatus
 from firsat_radari.db.base import Base
-from firsat_radari.db.models import DataSource, ScheduledJob, ScheduledJobRun
+from firsat_radari.db.models import (
+    DataSource,
+    NormalizedDocument,
+    ScheduledJob,
+    ScheduledJobRun,
+)
 from firsat_radari.profiles.service import (
     ProfileInput,
     ResearchProfileService,
@@ -23,6 +28,7 @@ from firsat_radari.scheduler.service import (
     ScheduleInput,
     SchedulerError,
     SchedulerService,
+    _is_search_relevant,
 )
 from scripts.bootstrap_pilot_schedules import _enforce_issue_schedule_limit
 
@@ -39,6 +45,40 @@ def _context() -> Iterator[Session]:
         yield session
     Base.metadata.drop_all(engine)
     engine.dispose()
+
+
+def test_search_relevance_excludes_market_reports_and_keeps_real_problems() -> None:
+    market_report = NormalizedDocument(
+        title="Automotive Software Market Size and Forecast Report",
+        body="Critical market growth analysis and press release.",
+        attributes={},
+    )
+    real_problem = NormalizedDocument(
+        title="Automotive diagnostic software fails to sync vehicle data",
+        body="The issue occurs on every connection and blocks the workflow.",
+        attributes={},
+    )
+    tangential_mention = NormalizedDocument(
+        title="scrcpy device",
+        body="Feature request mentioning automotive software in a long discussion.",
+        attributes={},
+    )
+
+    assert not _is_search_relevant(
+        market_report,
+        "automotive software",
+        [Mock()],
+    )
+    assert _is_search_relevant(
+        real_problem,
+        "automotive software",
+        [Mock()],
+    )
+    assert not _is_search_relevant(
+        tangential_mention,
+        "automotive software",
+        [Mock()],
+    )
 
 
 @pytest.mark.asyncio

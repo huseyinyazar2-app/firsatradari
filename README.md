@@ -372,7 +372,7 @@ npm ci
 npm run dev
 ```
 
-Arayüz ilk açılışta `http://127.0.0.1:8000` API adresini kullanır. API ayarı
+Arayüz ilk açılışta yerel ve üretim ters vekiliyle uyumlu `/api` adresini kullanır. API ayarı
 ekrandan değiştirilebilir. Radar, problem keşfi, kaynak yönetişimi, profil uyumu,
 ticari doğrulama, zaman kesmeli backtest, zamanlanmış işler ve operasyon alarmları
 aynı çalışma alanında gösterilir.

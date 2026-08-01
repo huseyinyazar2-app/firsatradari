@@ -13,6 +13,7 @@ from firsat_radari.db.models import (
     NormalizationRun,
     NormalizedDocument,
     RawSnapshot,
+    RawSnapshotObservation,
 )
 from firsat_radari.normalization.base import (
     NormalizationValidationError,
@@ -46,6 +47,7 @@ class NormalizationService:
         normalizer: SnapshotNormalizer,
         *,
         limit: int = 100,
+        ingestion_run_id: uuid.UUID | None = None,
     ) -> NormalizationOutcome:
         if not 1 <= limit <= 10_000:
             raise ValueError("limit must be between 1 and 10000")
@@ -73,9 +75,15 @@ class NormalizationService:
             NormalizedDocument.normalizer_key == normalizer.key,
             NormalizedDocument.normalizer_version == normalizer.version,
         )
+        snapshot_query = select(RawSnapshot)
+        if ingestion_run_id is not None:
+            snapshot_query = snapshot_query.join(
+                RawSnapshotObservation,
+                RawSnapshotObservation.snapshot_id == RawSnapshot.id,
+            ).where(RawSnapshotObservation.run_id == ingestion_run_id)
         snapshots = list(
             self._session.scalars(
-                select(RawSnapshot)
+                snapshot_query
                 .where(
                     RawSnapshot.source_id == source.id,
                     RawSnapshot.external_type.in_(normalizer.supported_external_types),
@@ -130,8 +138,9 @@ class NormalizationService:
                         )
                     )
                 run.success_count += 1
-                if not had_successful_normalization and snapshot.run_id is not None:
-                    ingestion_run = self._session.get(IngestionRun, snapshot.run_id)
+                counter_run_id = ingestion_run_id or snapshot.run_id
+                if not had_successful_normalization and counter_run_id is not None:
+                    ingestion_run = self._session.get(IngestionRun, counter_run_id)
                     if ingestion_run is not None:
                         ingestion_run.normalized_item_count += 1
             except NormalizationValidationError as exc:

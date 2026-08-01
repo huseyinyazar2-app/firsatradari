@@ -1248,6 +1248,53 @@ button:disabled {
   background: var(--surface-muted);
 }
 
+.search-result-reasons {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.search-result-themes {
+  display: grid;
+  gap: 10px;
+}
+
+.search-result-themes h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.search-result-themes article {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+
+.search-result-themes article > div {
+  display: grid;
+  gap: 3px;
+}
+
+.search-result-themes article small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.search-result-themes article ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
 .search-process-panel {
   display: grid;
   gap: 18px;

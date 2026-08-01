@@ -187,10 +187,11 @@ async def run_test_radar_search(
                 "normalize_limit": request.limit,
                 "extraction_source_key": "github",
                 "extract_limit": request.limit,
-                "cluster_after_extraction": True,
+                "cluster_after_extraction": False,
                 "request_cost_usd": "0",
             },
             as_of=datetime.now(UTC),
+            search_query=query,
         )
     except SchedulerError as exc:
         raise HTTPException(

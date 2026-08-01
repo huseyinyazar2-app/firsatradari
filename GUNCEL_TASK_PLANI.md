@@ -1,6 +1,6 @@
 # Fırsat Radarı — Güncel Durum ve Task Planı
 
-**Güncelleme tarihi:** 31 Temmuz 2026
+**Güncelleme tarihi:** 1 Ağustos 2026
 **Ana hedef:** LLM'in fikir üretmesine dayanmayan; sahadan toplanan ölçülebilir kanıtlarla problem, talep, rekabet boşluğu ve ödeme ihtimalini değerlendiren iç kullanım araştırma ürünü.
 
 Bu belge canlı görev takibidir. Ayrıntılı ürün şartnamesi için `Firsat_Radari_Gelistirme_Plani.md`, geniş ürün vizyonu için `Firsat_Radari_Nihai_Plan.md` geçerlidir.
@@ -33,6 +33,8 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [x] İlk araştırma paneli ve backend API entegrasyonu
 - [x] Ana menüde bağımsız test araması ekranı: örnek sorgular, kapsam uyarısı, işlem adımları, yüklenme ve sonuç durumları
 - [x] Konu girilerek çalıştırılan, 20 sonuçla sınırlı tek seferlik GitHub test araması
+- [x] Test araması için çalışma bazlı veri izolasyonu; eski normalizasyon kuyruğu ve global kümeler sonuçtan ayrıldı
+- [x] Gürültü/ilgi filtresi ve anlaşılır sonuç raporu: ilgili problem, elenen kayıt, kanıt, tema ve doğrulama gerekçeleri
 - [x] Docker/Compose/Caddy sunucu paketi, scheduler worker ve yedek doğrulama betikleri
 - [x] GitHub deposu, CI ve düzenli test/build kontrolleri
 
@@ -44,7 +46,7 @@ Bu oranlar birbirinden ayrıdır. Kodun büyük bölümünün yazılmış olmas�
 - [x] Kurallı sistemin problem olarak işaretlediği kayıt: **281**; üretilen problem kanıtı: **578**
 - [x] Anonim kota nedeniyle yarım kalan dört GitHub taraması yerelde token ile tekrar çalıştırıldı: **192** kayıt, **192** hatasız normalizasyon, **132** yeni problem kanıtı
 - [x] Yeni veriler için analiz tamamlandı: **113** küme ve **1.017** küme metriği üretildi; işlem hatası oluşmadı
-- [x] Panel/API test araması gerçek GitHub verisiyle doğrulandı: `software installation failure` sorgusunda **10** kayıt, **9** başarılı normalizasyon, **34** problem kanıtı; erişilemeyen **1** dış kayıt izole edildi
+- [x] Panel/API test araması yeniden doğrulandı: `automotive software` sorgusunda **20** kayıt toplandı; haber/pazar/SEO gürültüsünün tamamı elendi, **0** güvenilir problem kanıtı bulundu ve sistem doğru biçimde “fırsat doğrulanamadı” sonucu verdi
 - [x] Test araması ekranı masaüstü/mobil tarayıcıda doğrulandı; hata katmanı, konsol hatası ve yatay sayfa taşması yok
 - [ ] Etiketlenmiş gerçek veri olmadığı için precision/recall henüz ölçülemiyor
 - [ ] Güçlü, bağımsız ve projeler arası tekrarlanan problem kümeleri için veri henüz yetersiz

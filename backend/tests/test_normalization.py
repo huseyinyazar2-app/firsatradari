@@ -483,3 +483,36 @@ async def test_github_issue_and_pull_request_are_normalized_as_distinct_types(
         "issue",
         "pull_request",
     }
+
+
+@pytest.mark.asyncio
+async def test_normalization_can_be_scoped_to_the_current_ingestion_run(
+    session: Session,
+    tmp_path: Path,
+) -> None:
+    add_source(session, "github")
+    store = FileObjectStore(tmp_path)
+    item = RawItem(
+        external_type="repository",
+        external_id="123",
+        payload=github_payload(),
+        observed_at=datetime.now(UTC),
+    )
+    first = await IngestionService(session, store).discover(
+        SnapshotConnector("github", [item]),
+        {"q": "first"},
+    )
+    second = await IngestionService(session, store).discover(
+        SnapshotConnector("github", [item]),
+        {"q": "second"},
+    )
+
+    outcome = NormalizationService(session, store).normalize_pending(
+        GitHubRepositoryNormalizer(),
+        ingestion_run_id=second.run_id,
+    )
+
+    assert first.run_id != second.run_id
+    assert outcome.input_count == 1
+    assert outcome.success_count == 1
+    assert len(list(session.scalars(select(NormalizedDocument)))) == 1
